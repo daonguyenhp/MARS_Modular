@@ -1,0 +1,1 @@
+"""Callable and protocol skeletons for future module implementations."""
