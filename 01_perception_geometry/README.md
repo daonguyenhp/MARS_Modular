@@ -5,6 +5,23 @@ are synthetic obstacle geometry, center, and radius. No ROS, TF, driver,
 visualization, goal, ranking, memory, graph, bundle, planning, or motor control
 is part of the core.
 
+## Folder layout
+
+Implementations and their tests are grouped by responsibility:
+
+- `geometry/`: shared geometry operations and primitive tests.
+- `neighbor_sight/`: disk clipping and nearest-boundary visibility.
+- `closed_sights/`: blocked angular coverage and supporting boundaries.
+- `open_sights/`: free angular sectors and their representative open points.
+- `pipeline/`: complete perception pipeline and integration tests.
+- `internal/`: private geometry and interval helpers shared by stages.
+- `include/mars/perception_geometry/`: public API headers and module types;
+  existing `<mars/perception_geometry/...>` includes remain valid.
+- `tests/`: test-suite documentation linking to the tests in each feature folder.
+
+The root `CMakeLists.txt` builds all stages into one library and all tests into
+one test executable.
+
 ## Build and test
 
 From `MARS_Modular/` (CMake >= 3.16, C++17 compiler):
