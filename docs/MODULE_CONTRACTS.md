@@ -69,4 +69,24 @@ Consumes the outputs above and owns ROS 2 integration, simulation, visualization
 - Module 3 may consume Module 1 and Module 2 outputs.
 - Module 4 may integrate all modules with ROS 2.
 - Shared models in `common/types` must remain ROS-independent.
-- This initialization defines interfaces only; no paper algorithm is implemented yet.
+- Module 1 implements the pure C++17 perception pipeline. Modules 2–4 remain
+  placeholders; no ranking, graph, navigation, or ROS implementation is supplied.
+
+## C++ Module 1 contract
+
+`mars::perception_geometry::perceive(center, radius, obstacles)` returns a
+`PerceptionResult`. Shared primitives live in
+`common/cpp/include/mars/common/geometry_types.hpp`; perception outputs live in
+`01_perception_geometry/include/mars/perception_geometry/types.hpp`.
+
+Python contracts are preserved as scaffolding, not runtime bindings. C++
+intervals use start/sweep to distinguish empty, wrapping, and full coverage.
+Merged closed sights retain multiple visible boundary fragments. Open points
+include their representative angle and optional source index. Radius and
+obstacles are explicit inputs, rather than unspecified state in the Python
+`PerceptionProvider.compute(center)` stub.
+
+The synthetic API assumes complete obstacle geometry and a point observer in
+free space. Future adapters must resolve frames, timestamps, and unknown sensor
+coverage before supplying geometry. See Module 1's README for numerical and
+invalid-input rules. ROS remains in a future integration layer.

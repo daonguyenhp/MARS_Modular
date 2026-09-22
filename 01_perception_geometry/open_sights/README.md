@@ -1,3 +1,5 @@
-# Open Sights
+# Open Sights and Open Points
 
-Reserved for MD1.3 interfaces and implementation. Current status: Not started.
+Implemented in `open_sights.cpp` and `open_points.cpp`. Circular
+complement gives free sectors; each supplies one radius-r arc midpoint.
+See the Module 1 README for the full-circle convention and tolerance policy.
