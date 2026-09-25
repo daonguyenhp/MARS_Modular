@@ -24,12 +24,14 @@ Bundle build_bundle(
   internal::require_finite(center, "neighbor_sight.center");
 
   std::vector<mars::common::Point2D> vertices;
+  std::vector<mars::common::Segment2D> obstacle_edges;
   for (const auto& boundary : perception.neighbor_sight.visible_boundaries) {
     internal::require_finite(boundary.start, "visible boundary start");
     internal::require_finite(boundary.end, "visible boundary end");
     if (internal::point_near(boundary.start, boundary.end, linear_tolerance)) {
       continue;
     }
+    obstacle_edges.push_back(boundary);
     for (const auto endpoint : {boundary.start, boundary.end}) {
       if (internal::point_near(center, endpoint, linear_tolerance)) {
         continue;
@@ -78,7 +80,7 @@ Bundle build_bundle(
   // one or more concurrent line segments form a nondegenerate bundle.
   const bool degenerate = segments.empty();
   return {observation_id, center_node_id, center, std::move(vertices),
-          std::move(segments), degenerate};
+          std::move(segments), degenerate, std::move(obstacle_edges)};
 }
 
 }  // namespace mars::graph_bundle_management

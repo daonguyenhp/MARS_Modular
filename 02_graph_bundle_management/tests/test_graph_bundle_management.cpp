@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -6,6 +7,7 @@
 #include <string>
 
 #include "mars/graph_bundle_management/bundle_builder.hpp"
+#include "mars/graph_bundle_management/gate_preparation.hpp"
 #include "mars/graph_bundle_management/graph_bundle_manager.hpp"
 #include "mars/graph_bundle_management/graph_search.hpp"
 #include "mars/graph_bundle_management/open_point_memory.hpp"
@@ -182,6 +184,49 @@ void test_manager_pipeline() {
           "unconfirmed gate contract did not produce an explicit failure");
 }
 
+void test_visible_boundary_gates() {
+  mgbm::Bundle stuck;
+  stuck.observation_id = 1;
+  stuck.concurrent_point = {0.0, 0.0};
+  stuck.ordered_vertices = {{0.0, 0.4}, {0.0, -0.4}};
+  stuck.degenerate = false;
+  mgbm::Bundle middle;
+  middle.observation_id = 2;
+  middle.concurrent_point = {1.0, 0.0};
+  middle.ordered_vertices = {{1.0, 0.5}, {1.0, -0.5}};
+  middle.degenerate = false;
+  mgbm::Bundle goal;
+  goal.observation_id = 3;
+  goal.concurrent_point = {2.0, 0.0};
+  goal.ordered_vertices = {{2.4, 0.4}, {2.4, -0.4}};
+  goal.degenerate = false;
+  const mars::common::Segment2D blocking{{2.2, -1.0}, {2.2, 1.0}};
+  stuck.obstacle_edges = {blocking};
+  middle.obstacle_edges = {blocking};
+  goal.obstacle_edges = {blocking};
+  mgbm::BundleSequence sequence;
+  sequence.bundles = {stuck, middle, goal};
+
+  const auto gates = mgbm::prepare_gates(sequence, true);
+  require(gates.success && !gates.gates.empty(),
+          "C* produced no sleeve edge");
+  for (const auto& gate : gates.gates) {
+    require(std::hypot(gate.left.x - gate.right.x, gate.left.y - gate.right.y) >
+                1.0e-6,
+            "common edge collapsed");
+    const auto center_at = [](mars::common::Point2D point) {
+      return std::hypot(point.x, point.y) <= 1.0e-6 ||
+             std::hypot(point.x - 1.0, point.y) <= 1.0e-6 ||
+             std::hypot(point.x - 2.0, point.y) <= 1.0e-6;
+    };
+    require(!(center_at(gate.left) && center_at(gate.right)),
+            "center-to-center link was emitted as a gate");
+    require(std::hypot(gate.left.x - 1.0, gate.left.y) > 1.0e-6 &&
+                std::hypot(gate.right.x - 1.0, gate.right.y) > 1.0e-6,
+            "portal touches the middle bundle center");
+  }
+}
+
 void test_invalid_update_is_rejected_before_mutation() {
   mgbm::GraphBundleManager manager;
   mgbm::GraphBundleUpdate update;
@@ -238,6 +283,7 @@ int main() {
     test_shared_sight_proof();
     test_bundle_and_direction();
     test_manager_pipeline();
+    test_visible_boundary_gates();
     test_invalid_update_is_rejected_before_mutation();
     test_real_module1_to_module2_contract();
   } catch (const std::exception& error) {

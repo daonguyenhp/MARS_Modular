@@ -17,9 +17,10 @@ std::optional<GraphPath> reconstruct(const VisibilityGraph& graph,
                                      const std::map<VisibilityNodeId,
                                                     VisibilityNodeId>& previous) {
   std::vector<VisibilityNodeId> reversed{goal};
+  std::set<VisibilityNodeId> seen{goal};
   while (reversed.back() != start) {
     const auto iterator = previous.find(reversed.back());
-    if (iterator == previous.end()) {
+    if (iterator == previous.end() || !seen.insert(iterator->second).second) {
       return std::nullopt;
     }
     reversed.push_back(iterator->second);
@@ -97,8 +98,9 @@ std::optional<GraphPath> shortest_cost_path(const VisibilityGraph& graph,
       const auto* edge = graph.find_edge(current, neighbor);
       const double candidate = distance + edge->cost;
       const auto known = distances.find(neighbor);
-      if (known == distances.end() || candidate < known->second ||
-          (candidate == known->second && current < previous[neighbor])) {
+      // Strict improvement only. Rewriting an equal-cost parent can point
+      // two nodes at each other and make path reconstruction loop forever.
+      if (known == distances.end() || candidate < known->second) {
         distances[neighbor] = candidate;
         previous[neighbor] = current;
         queue.push({candidate, neighbor});

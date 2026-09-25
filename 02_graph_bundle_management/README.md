@@ -86,11 +86,14 @@ Module 3 may rely on these fields:
 - `RoutePreparationResult::gate_preparation`: validated gates or a typed,
   explicit failure.
 
-The exact portal representation is still an integration decision. Therefore
+When the contract is enabled, portals are the common edges of a
+triangulation of C*. C* starts at bundle Cf from (11) and (12), keeps the
+segments on the side of each turn that is at most pi, adds a segment at a
+degenerate bundle, and trims segments of distinct bundles until they are
+disjoint. The sleeve runs from the stuck end to the return end.
 `GraphBundleConfig::gate_contract_enabled` defaults to `false`, and gate
-preparation reports `ContractNotEnabled`. Even if enabled, the current version
-reports `UnsupportedGeometry`; it deliberately does not port the legacy
-path-perpendicular or center-link gate heuristics.
+preparation then reports `ContractNotEnabled`. Center-to-center links and
+path-perpendicular segments are still not gates.
 
 ## Ownership
 

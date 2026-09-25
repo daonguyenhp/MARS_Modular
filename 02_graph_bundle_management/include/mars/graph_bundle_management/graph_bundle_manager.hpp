@@ -36,6 +36,12 @@ class GraphBundleManager {
       OpenPointId target,
       GraphSearchPolicy policy) const;
 
+  /**
+   * Portals for a return from the latest bundle back to the first, in that
+   * travel order. Fails with the same reasons as prepare_gates.
+   */
+  GatePreparationResult return_gates() const;
+
  private:
   GraphBundleConfig config_;
   OpenPointMemory open_point_memory_;

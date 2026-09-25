@@ -69,8 +69,11 @@ Consumes the outputs above and owns ROS 2 integration, simulation, visualization
 - Module 3 may consume Module 1 and Module 2 outputs.
 - Module 4 may integrate all modules with ROS 2.
 - Shared models in `common/types` must remain ROS-independent.
-- Module 1 implements the pure C++17 perception pipeline. Modules 2–4 remain
-  placeholders; no ranking, graph, navigation, or ROS implementation is supplied.
+- Module 1 implements the pure C++17 perception pipeline. Module 2 implements
+  ranking, the visibility graph, and bundle sequences. Module 3 implements
+  Algorithm 2 (Explore / BAR / DAP-funnel). Module 4 loads the Mode 1 maps,
+  follows each planned path with fake odometry, and publishes the marker
+  layers for RViz from the ROS 1 package `ros1/mars_mode1_sim`.
 
 ## C++ Module 1 contract
 

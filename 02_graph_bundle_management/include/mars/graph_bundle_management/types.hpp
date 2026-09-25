@@ -97,6 +97,8 @@ struct Bundle {
   std::vector<mars::common::Point2D> ordered_vertices{};
   std::vector<mars::common::Segment2D> segments{};
   bool degenerate{true};
+  /** Obstacle edges this scan actually saw. A gap between them is a window. */
+  std::vector<mars::common::Segment2D> obstacle_edges{};
 };
 
 /** Direction in which a graph path is converted to bundles. */

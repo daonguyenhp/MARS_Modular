@@ -1,0 +1,14 @@
+<launch>
+  <arg name="map" default="hard_alley"/>
+  <arg name="run_rviz" default="true"/>
+
+  <node pkg="mars_mode1_sim" type="mode1_rviz_node" name="mode1_rviz" output="screen">
+    <param name="map_id" value="$(arg map)"/>
+    <!-- Pause on each sensing pose, then drive that one step slowly. -->
+    <param name="step_hold_sec" value="2.0"/>
+    <param name="drive_speed" value="0.12"/>
+  </node>
+
+  <node if="$(arg run_rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find mars_mode1_sim)/rviz/mode1.rviz" output="screen"/>
+</launch>

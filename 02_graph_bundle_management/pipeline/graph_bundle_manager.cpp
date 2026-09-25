@@ -243,4 +243,17 @@ RoutePreparationResult GraphBundleManager::prepare_route(
           std::move(sequence.sequence), std::move(gates)};
 }
 
+GatePreparationResult GraphBundleManager::return_gates() const {
+  BundleSequence sequence;
+  sequence.direction = BundleSequenceDirection::TargetToCurrent;
+  const auto& stored = bundle_history_.bundles();
+  sequence.bundles.reserve(stored.size());
+  for (auto bundle = stored.rbegin(); bundle != stored.rend(); ++bundle) {
+    sequence.observation_ids.push_back(bundle->observation_id);
+    sequence.bundles.push_back(*bundle);
+  }
+  return prepare_gates(sequence, config_.gate_contract_enabled,
+                       config_.linear_epsilon);
+}
+
 }  // namespace mars::graph_bundle_management

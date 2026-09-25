@@ -5,9 +5,12 @@
 namespace mars::graph_bundle_management {
 
 /**
- * Prepare portals only when the Module 3 gate contract is enabled. The current
- * repository has no agreed portal representation, so enabled calls return an
- * explicit unsupported-geometry failure instead of inventing gates.
+ * Portals are the common edges of a triangulation of C*. C* starts at the
+ * bundle Cf of (11) and (12). Each later bundle keeps the segments on the
+ * side of angle c_{i-1} c_i c_{i+1} that is at most pi, a segment is added
+ * where a bundle is degenerate, and segments of distinct bundles are trimmed
+ * until they no longer cross. Center links and path-perpendicular segments
+ * are not gates.
  */
 GatePreparationResult prepare_gates(const BundleSequence& sequence,
                                     bool gate_contract_enabled,

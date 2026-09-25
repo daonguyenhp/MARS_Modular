@@ -1,3 +1,18 @@
 {
-    "cmake.sourceDirectory": "/home/evice2457/workspace/IVS/JetTank_runtime_bundle_win/hiwonder/MARS_Modular/01_perception_geometry"
+  "cmake.sourceDirectory": "${workspaceFolder}",
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.configureArgs": [
+    "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    "-DBUILD_TESTING=OFF",
+    "-DMARS_BUILD_TESTS=OFF"
+  ],
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.path": "clangd",
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}",
+    "--background-index",
+    "--clang-tidy=false",
+    "--header-insertion=never"
+  ],
+  "clangd.onConfigChanged": "restart"
 }

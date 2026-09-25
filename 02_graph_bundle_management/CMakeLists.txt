@@ -1,3 +1,13 @@
+cmake_minimum_required(VERSION 3.16)
+project(mars_graph_bundle_management VERSION 0.1.0 LANGUAGES CXX)
+
+if(NOT TARGET mars::common)
+  add_library(mars_common INTERFACE)
+  add_library(mars::common ALIAS mars_common)
+  target_include_directories(mars_common INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/cpp/include)
+endif()
+
 add_library(mars_graph_bundle_management
   ranking_memory/ranking.cpp
   ranking_memory/open_point_memory.cpp
