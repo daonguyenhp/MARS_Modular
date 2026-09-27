@@ -1,3 +1,5 @@
 .build/
 /build/
 compile_commands.json.bak
+# Generated demo output (polygon_explore_sim writes mode1_<map>.svg in the cwd)
+/mode1_*.svg

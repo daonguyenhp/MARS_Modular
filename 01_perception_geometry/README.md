@@ -5,6 +5,11 @@ are synthetic obstacle geometry, center, and radius. No ROS, TF, driver,
 visualization, goal, ranking, memory, graph, bundle, planning, or motor control
 is part of the core.
 
+> **Implementers:** start with `IMPLEMENTATION_GUIDE_VI.md` — a Vietnamese
+> end-to-end walkthrough (problem, API, build/test, WBS mapping, sample output
+> under `docs/assets/mode1_hard_alley.svg`). This README is the concise English
+> API/contract reference.
+
 ## Folder layout
 
 Implementations and their tests are grouped by responsibility:
