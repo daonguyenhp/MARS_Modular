@@ -4,15 +4,26 @@ Module 2 is a ROS-independent C++17 library. It consumes the geometric output
 of Module 1, keeps global exploration memory, builds an accumulated visibility
 graph, and reconstructs ordered bundle sequences for Module 3.
 
-## Build and verify
+> **Hướng dẫn M2:** đọc [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)
+> để xem luồng dữ liệu M1 → M2 → M3, cấu trúc implementation, cách chạy
+> test/mô phỏng và bảng đối chiếu WBS MD2.1–MD2.3.
 
-From the `MARS_Modular` directory:
+## Quick run
+
+From `MARS_Modular/`, build and run the ROS-independent M2 test and example:
 
 ```sh
-cmake -S . -B build -DMARS_BUILD_TESTS=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -S . -B .build/m2 -DBUILD_TESTING=OFF -DMARS_BUILD_TESTS=ON -DMARS_DEMO_BUILD_TESTS=OFF
+cmake --build .build/m2 --target mars_graph_bundle_management_tests mars_graph_bundle_management_example
+.build/m2/02_graph_bundle_management/mars_graph_bundle_management_tests
+.build/m2/02_graph_bundle_management/mars_graph_bundle_management_example
 ```
+
+On a multi-config generator, add `--config Debug` to the build command and run
+the executables under `02_graph_bundle_management/Debug/`. For the complete
+Mode 1 simulation and ROS 1 RViz viewer, follow the guide linked above.
+The guide also records the current gate-test failure observed on Windows/MinGW
+with `main` at `76e8595`; do not treat a successful build as a passing test.
 
 The library target is `mars_graph_bundle_management`; CMake consumers should
 link the alias target `mars::graph_bundle_management`.
