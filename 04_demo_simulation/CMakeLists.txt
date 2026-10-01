@@ -23,7 +23,6 @@ endif()
 
 add_library(mars_demo_simulation
   maps/mode1_maps.cpp
-  launch/mode1_shell.cpp
   launch/path_follower.cpp
   launch/mode1_mission.cpp
   visualization/mode1_trace.cpp)

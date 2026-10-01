@@ -25,12 +25,6 @@ struct Triangle {
   Point2D c{};
 };
 
-struct Segment {
-  Point2D a{};
-  Point2D b{};
-  Point2D inward{};
-};
-
 double vcross(Point2D u, Point2D v) noexcept {
   return u.x * v.y - u.y * v.x;
 }
@@ -52,12 +46,6 @@ bool in_triangle(Point2D point, const Triangle& triangle, double epsilon) {
   const bool non_negative = ab >= -epsilon && bc >= -epsilon && ca >= -epsilon;
   const bool non_positive = ab <= epsilon && bc <= epsilon && ca <= epsilon;
   return non_negative || non_positive;
-}
-
-bool in_union(Point2D point, const std::vector<Triangle>& fans, double epsilon) {
-  return std::any_of(fans.begin(), fans.end(), [&](const Triangle& triangle) {
-    return in_triangle(point, triangle, epsilon);
-  });
 }
 
 bool proper_hit(Point2D a, Point2D b, Point2D c, Point2D d, Point2D& at,
@@ -88,27 +76,6 @@ std::vector<Point2D> around_center(const Bundle& bundle) {
   return vertices;
 }
 
-std::vector<Triangle> fan_of(const Bundle& bundle) {
-  std::vector<Triangle> fans;
-  if (bundle.degenerate) {
-    return fans;
-  }
-  const auto vertices = around_center(bundle);
-  if (vertices.size() < 2) {
-    return fans;
-  }
-  const std::size_t count = vertices.size() == 2 ? 1 : vertices.size();
-  for (std::size_t index = 0; index < count; ++index) {
-    Triangle triangle{bundle.concurrent_point, vertices[index],
-                      vertices[(index + 1) % vertices.size()]};
-    if (std::abs(internal::cross(triangle.a, triangle.b, triangle.c)) <= 1.0e-12) {
-      continue;
-    }
-    fans.push_back(triangle);
-  }
-  return fans;
-}
-
 bool crosses_obstacle(Point2D a, Point2D b, const std::vector<Bundle>& bundles) {
   for (const auto& bundle : bundles) {
     for (const auto& edge : bundle.obstacle_edges) {
@@ -135,99 +102,6 @@ double distance_to_segment(Point2D point, Point2D a, Point2D b) {
   return std::hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
 }
 
-bool fans_touch(const std::vector<Triangle>& left, const std::vector<Triangle>& right) {
-  const auto hits = [](const std::vector<Triangle>& source,
-                       const std::vector<Triangle>& target) {
-    for (const auto& triangle : source) {
-      const Point2D vertices[] = {triangle.a, triangle.b, triangle.c};
-      for (const auto& vertex : vertices) {
-        if (in_union(vertex, target, 1.0e-6)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-  if (hits(left, right) || hits(right, left)) {
-    return true;
-  }
-  for (const auto& first : left) {
-    const Point2D a[] = {first.a, first.b, first.c};
-    for (const auto& second : right) {
-      const Point2D b[] = {second.a, second.b, second.c};
-      for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-          Point2D at{};
-          double t_ab = 0.0;
-          double t_cd = 0.0;
-          if (proper_hit(a[i], a[(i + 1) % 3], b[j], b[(j + 1) % 3], at, t_ab,
-                         t_cd)) {
-            return true;
-          }
-        }
-      }
-    }
-  }
-  return false;
-}
-
-std::vector<Triangle> visibility_fans(const std::vector<Bundle>& bundles) {
-  std::vector<std::vector<Triangle>> per_bundle(bundles.size());
-  std::vector<Triangle> fans;
-  for (std::size_t index = 0; index < bundles.size(); ++index) {
-    per_bundle[index] = fan_of(bundles[index]);
-    fans.insert(fans.end(), per_bundle[index].begin(), per_bundle[index].end());
-  }
-  for (std::size_t index = 0; index + 1 < bundles.size(); ++index) {
-    if (fans_touch(per_bundle[index], per_bundle[index + 1])) {
-      continue;
-    }
-    const Point2D from = bundles[index].concurrent_point;
-    const Point2D to = bundles[index + 1].concurrent_point;
-    if (internal::point_near(from, to, kJoin)) {
-      continue;
-    }
-    bool found = false;
-    Point2D bridge_vertex{};
-    double best_distance = 0.0;
-    for (const std::size_t side : {index, index + 1}) {
-      for (const auto& vertex : bundles[side].ordered_vertices) {
-        if (std::abs(internal::cross(from, to, vertex)) <= 1.0e-12) {
-          continue;
-        }
-        if (crosses_obstacle(from, vertex, bundles) ||
-            crosses_obstacle(to, vertex, bundles)) {
-          continue;
-        }
-        const double length = distance_to_segment(vertex, from, to);
-        if (!found || length < best_distance) {
-          found = true;
-          best_distance = length;
-          bridge_vertex = vertex;
-        }
-      }
-    }
-    if (found) {
-      fans.push_back({from, to, bridge_vertex});
-    }
-  }
-  fans.erase(std::remove_if(fans.begin(), fans.end(),
-                            [&](const Triangle& triangle) {
-                              const Point2D vertices[] = {triangle.a, triangle.b,
-                                                          triangle.c};
-                              for (int index = 0; index < 3; ++index) {
-                                if (crosses_obstacle(vertices[index],
-                                                     vertices[(index + 1) % 3],
-                                                     bundles)) {
-                                  return true;
-                                }
-                              }
-                              return false;
-                            }),
-             fans.end());
-  return fans;
-}
-
 bool proper_hit(Point2D a, Point2D b, Point2D c, Point2D d, Point2D& at,
                 double& t_ab, double& t_cd) {
   if (internal::point_near(a, c, kJoin) || internal::point_near(a, d, kJoin) ||
@@ -251,93 +125,6 @@ bool proper_hit(Point2D a, Point2D b, Point2D c, Point2D d, Point2D& at,
   at = {a.x + t_ab * (b.x - a.x), a.y + t_ab * (b.y - a.y)};
   return t_ab > 1.0e-8 && t_ab < 1.0 - 1.0e-8 && t_cd > 1.0e-8 &&
          t_cd < 1.0 - 1.0e-8;
-}
-
-bool point_on_open_segment(Point2D point, Point2D a, Point2D b, double& t) {
-  const double dx = b.x - a.x;
-  const double dy = b.y - a.y;
-  const double length2 = dx * dx + dy * dy;
-  if (length2 <= 1.0e-18) {
-    return false;
-  }
-  const double cross = dx * (point.y - a.y) - dy * (point.x - a.x);
-  if (std::abs(cross) > 1.0e-8 * std::sqrt(length2)) {
-    return false;
-  }
-  t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / length2;
-  return t > 1.0e-6 && t < 1.0 - 1.0e-6;
-}
-
-std::vector<Segment> atomic_edges(const std::vector<Triangle>& fans) {
-  std::vector<Segment> segments;
-  for (const auto& triangle : fans) {
-    const Point2D inside = centroid(triangle);
-    const Point2D vertices[] = {triangle.a, triangle.b, triangle.c};
-    for (int index = 0; index < 3; ++index) {
-      segments.push_back(
-          {vertices[index], vertices[(index + 1) % 3], inside});
-    }
-  }
-
-  struct Cut {
-    double t{0.0};
-    Point2D point{};
-  };
-  std::vector<std::vector<Cut>> cuts(segments.size());
-  for (std::size_t i = 0; i < segments.size(); ++i) {
-    for (std::size_t j = i + 1; j < segments.size(); ++j) {
-      Point2D at{};
-      double t_ab = 0.0;
-      double t_cd = 0.0;
-      if (proper_hit(segments[i].a, segments[i].b, segments[j].a, segments[j].b,
-                     at, t_ab, t_cd)) {
-        cuts[i].push_back({t_ab, at});
-        cuts[j].push_back({t_cd, at});
-      }
-      const Point2D ends_j[] = {segments[j].a, segments[j].b};
-      for (const auto& end : ends_j) {
-        double t = 0.0;
-        if (point_on_open_segment(end, segments[i].a, segments[i].b, t)) {
-          cuts[i].push_back({t, end});
-        }
-      }
-      const Point2D ends_i[] = {segments[i].a, segments[i].b};
-      for (const auto& end : ends_i) {
-        double t = 0.0;
-        if (point_on_open_segment(end, segments[j].a, segments[j].b, t)) {
-          cuts[j].push_back({t, end});
-        }
-      }
-    }
-  }
-
-  std::vector<Segment> atomic;
-  for (std::size_t index = 0; index < segments.size(); ++index) {
-    auto& cut = cuts[index];
-    std::sort(cut.begin(), cut.end(),
-              [](const Cut& first, const Cut& second) { return first.t < second.t; });
-    Point2D cursor = segments[index].a;
-    for (const auto& piece : cut) {
-      if (!internal::point_near(cursor, piece.point, kJoin)) {
-        atomic.push_back({cursor, piece.point, segments[index].inward});
-      }
-      cursor = piece.point;
-    }
-    if (!internal::point_near(cursor, segments[index].b, kJoin)) {
-      atomic.push_back({cursor, segments[index].b, segments[index].inward});
-    }
-  }
-  return atomic;
-}
-
-int vertex_id(std::vector<Point2D>& points, Point2D point) {
-  for (std::size_t index = 0; index < points.size(); ++index) {
-    if (internal::point_near(points[index], point, kWeld)) {
-      return static_cast<int>(index);
-    }
-  }
-  points.push_back(point);
-  return static_cast<int>(points.size() - 1);
 }
 
 bool strictly_inside(Point2D point, Point2D a, Point2D b, Point2D c) {
@@ -567,162 +354,6 @@ std::optional<std::vector<Gate>> sleeve_portals(const std::vector<Triangle>& tri
     return std::vector<Gate>{};
   }
   return best;
-}
-
-std::optional<std::vector<Triangle>> interior_triangles(
-    const std::vector<Triangle>& fans) {
-  const auto atomic = atomic_edges(fans);
-  std::vector<Point2D> points;
-  std::vector<std::pair<int, int>> undirected;
-  for (const auto& segment : atomic) {
-    const Point2D mid{(segment.a.x + segment.b.x) * 0.5,
-                      (segment.a.y + segment.b.y) * 0.5};
-    if (!in_union(mid, fans, 1.0e-7)) {
-      continue;
-    }
-    int from = vertex_id(points, segment.a);
-    int to = vertex_id(points, segment.b);
-    if (from == to) {
-      continue;
-    }
-    if (from > to) {
-      std::swap(from, to);
-    }
-    const bool seen = std::any_of(
-        undirected.begin(), undirected.end(), [&](const std::pair<int, int>& edge) {
-          return edge.first == from && edge.second == to;
-        });
-    if (!seen) {
-      undirected.emplace_back(from, to);
-    }
-  }
-  if (undirected.empty()) {
-    return std::nullopt;
-  }
-
-  struct Half {
-    int from{0};
-    int to{0};
-    int twin{0};
-  };
-  std::vector<Half> halves;
-  std::vector<std::vector<int>> outgoing(points.size());
-  for (const auto& edge : undirected) {
-    const int forward = static_cast<int>(halves.size());
-    const int reverse = forward + 1;
-    halves.push_back({edge.first, edge.second, reverse});
-    halves.push_back({edge.second, edge.first, forward});
-    outgoing[static_cast<std::size_t>(edge.first)].push_back(forward);
-    outgoing[static_cast<std::size_t>(edge.second)].push_back(reverse);
-  }
-  for (std::size_t vertex = 0; vertex < points.size(); ++vertex) {
-    auto& edges = outgoing[vertex];
-    std::sort(edges.begin(), edges.end(), [&](int first, int second) {
-      const Point2D ahead{
-          points[static_cast<std::size_t>(halves[static_cast<std::size_t>(first)].to)].x -
-              points[vertex].x,
-          points[static_cast<std::size_t>(halves[static_cast<std::size_t>(first)].to)].y -
-              points[vertex].y};
-      const Point2D other{
-          points[static_cast<std::size_t>(halves[static_cast<std::size_t>(second)].to)].x -
-              points[vertex].x,
-          points[static_cast<std::size_t>(halves[static_cast<std::size_t>(second)].to)].y -
-              points[vertex].y};
-      return std::atan2(ahead.y, ahead.x) < std::atan2(other.y, other.x);
-    });
-  }
-
-  const auto next_half = [&](int current) {
-    const int at = halves[static_cast<std::size_t>(current)].to;
-    const auto& edges = outgoing[static_cast<std::size_t>(at)];
-    const auto back = std::find(edges.begin(), edges.end(),
-                                halves[static_cast<std::size_t>(current)].twin);
-    if (back == edges.end() || edges.empty()) {
-      return -1;
-    }
-    const std::size_t position = static_cast<std::size_t>(back - edges.begin());
-    return edges[(position + edges.size() - 1) % edges.size()];
-  };
-
-  std::vector<char> used(halves.size(), 0);
-  std::vector<Triangle> result;
-  for (std::size_t start_edge = 0; start_edge < halves.size(); ++start_edge) {
-    if (used[start_edge]) {
-      continue;
-    }
-    std::vector<int> loop;
-    int cursor = static_cast<int>(start_edge);
-    bool closed = false;
-    for (std::size_t guard = 0; guard < halves.size() + 2; ++guard) {
-      if (used[static_cast<std::size_t>(cursor)]) {
-        break;
-      }
-      used[static_cast<std::size_t>(cursor)] = 1;
-      loop.push_back(halves[static_cast<std::size_t>(cursor)].from);
-      const int next = next_half(cursor);
-      if (next < 0) {
-        break;
-      }
-      if (next == static_cast<int>(start_edge)) {
-        closed = true;
-        break;
-      }
-      cursor = next;
-    }
-    if (!closed || loop.size() < 3) {
-      continue;
-    }
-    std::vector<Point2D> face;
-    for (const int id : loop) {
-      if (!face.empty() &&
-          internal::point_near(face.back(), points[static_cast<std::size_t>(id)], kWeld)) {
-        continue;
-      }
-      face.push_back(points[static_cast<std::size_t>(id)]);
-    }
-    bool dropped = true;
-    while (dropped && face.size() >= 4) {
-      dropped = false;
-      for (std::size_t index = 0; index < face.size(); ++index) {
-        const Point2D prev = face[(index + face.size() - 1) % face.size()];
-        const Point2D curr = face[index];
-        const Point2D next = face[(index + 1) % face.size()];
-        if (std::abs(internal::cross(prev, curr, next)) <= 1.0e-10) {
-          face.erase(face.begin() + static_cast<std::ptrdiff_t>(index));
-          dropped = true;
-          break;
-        }
-      }
-    }
-    if (face.size() < 3 || std::abs(signed_area(face)) <= 1.0e-12) {
-      continue;
-    }
-    if (signed_area(face) < 0.0) {
-      std::reverse(face.begin(), face.end());
-    }
-    const Point2D from = face[0];
-    const Point2D to = face[1];
-    const Point2D mid{(from.x + to.x) * 0.5, (from.y + to.y) * 0.5};
-    Point2D left{-(to.y - from.y), to.x - from.x};
-    const double length = std::hypot(left.x, left.y);
-    if (length <= 1.0e-12) {
-      continue;
-    }
-    const Point2D probe{mid.x + 1.0e-4 * left.x / length,
-                        mid.y + 1.0e-4 * left.y / length};
-    if (!in_union(probe, fans, 1.0e-6)) {
-      continue;
-    }
-    const auto pieces = triangulate(face);
-    if (!pieces) {
-      continue;
-    }
-    result.insert(result.end(), pieces->begin(), pieces->end());
-  }
-  if (result.empty()) {
-    return std::nullopt;
-  }
-  return result;
 }
 
 double signed_turn(Point2D from, Point2D to) {

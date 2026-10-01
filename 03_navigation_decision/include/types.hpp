@@ -45,14 +45,15 @@ enum class FunnelFailureReason {
 /**
  * JetTank / paper limited-vision numbers.
  *
- * vision_radius r: Mode 1 default 0.85 m (YDLIDAR G4 clipped to paper r).
- * max_step must stay < 2 r so consecutive concurrent points have overlapping
- * neighbor sights (paper Section 4.1). Mode 1 uses 0.70 m.
+ * vision_radius r: paper limited range, fitted to these maps. The paper
+ * step is 0.70 m and must stay < 2 r. Its example r = 0.85 m draws a 1.70 m
+ * disk, wider than hard_alley's 1.35 m corridor. r = 0.75 m (diameter 1.50 m)
+ * is the smallest range that still sees geogebra's next opening.
  * goal_tolerance must be >= the path-follower waypoint tolerance (0.10 m);
  * Mode 1 uses 0.15 m.
  */
 struct NavigationConfig {
-  double vision_radius{0.85};
+  double vision_radius{0.75};
   double goal_tolerance{0.15};
   double max_step{0.70};
   double arrival_tolerance{0.15};

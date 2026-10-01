@@ -23,6 +23,7 @@ Implementations and their tests are grouped by responsibility:
 - `include/mars/perception_geometry/`: public API headers and module types;
   existing `<mars/perception_geometry/...>` includes remain valid.
 - `tests/`: test-suite documentation linking to the tests in each feature folder.
+- `examples/`: MD4.4 smoke demos (<50 lines each), no ROS.
 
 The root `CMakeLists.txt` builds all stages into one library and all tests into
 one test executable.
@@ -35,10 +36,12 @@ From `MARS_Modular/` (CMake >= 3.16, C++17 compiler):
 cmake -S 01_perception_geometry -B .build/core -DCMAKE_BUILD_TYPE=Debug
 cmake --build .build/core -j2
 ctest --test-dir .build/core --output-on-failure
+cmake --build .build/core --target mars_perception_geometry_example -j2
 ```
 
 Tests use the host GTest CMake package (tested with GTest 1.11), with no download
-at configure time. `-DBUILD_TESTING=OFF` builds the library without GTest.
+at configure time. `-DBUILD_TESTING=OFF` builds the library without GTest or the
+example.
 Build output belongs in the Git-ignored `MARS_Modular/.build/` directory.
 Other CMake projects can use `add_subdirectory()` and link the source-tree
 target `mars::perception_geometry`; includes and C++17 propagate. Installed

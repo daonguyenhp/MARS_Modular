@@ -61,6 +61,105 @@ bool path_crosses_wall(const std::vector<mars::common::Point2D>& points,
   return false;
 }
 
+// Shortest path from the stuck pose to the entry through wall corners the
+// robot has already seen. Corridor samples stay in the graph, so this path
+// is never longer than walking the entry poses straight back.
+std::vector<mars::common::Point2D> taut_return(
+    mars::common::Point2D from, mars::common::Point2D to,
+    const std::vector<mars::common::Point2D>& corridor, const LoadedMap& map,
+    double seen_radius) {
+  std::vector<mars::common::Point2D> nodes;
+  auto add = [&](mars::common::Point2D point) {
+    for (const auto& existing : nodes) {
+      if (distance(existing, point) <= 1.0e-4) {
+        return;
+      }
+    }
+    nodes.push_back(point);
+  };
+  add(from);
+  add(to);
+  for (const auto& point : corridor) {
+    add(point);
+  }
+  for (const auto& obstacle : map.obstacles) {
+    for (const auto& vertex : obstacle.vertices) {
+      mars::common::Point2D nearest = corridor.empty() ? from : corridor.front();
+      double nearest_distance = distance(vertex, nearest);
+      for (const auto& sample : corridor) {
+        const double length = distance(vertex, sample);
+        if (length < nearest_distance) {
+          nearest_distance = length;
+          nearest = sample;
+        }
+      }
+      if (nearest_distance > seen_radius || nearest_distance <= 1.0e-9) {
+        continue;
+      }
+      constexpr double kGap = 0.04;
+      const double step = std::min(kGap, nearest_distance * 0.5);
+      add({vertex.x + (nearest.x - vertex.x) / nearest_distance * step,
+           vertex.y + (nearest.y - vertex.y) / nearest_distance * step});
+    }
+  }
+
+  const std::size_t count = nodes.size();
+  if (count < 2) {
+    return {};
+  }
+  std::vector<std::vector<std::pair<std::size_t, double>>> edges(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    for (std::size_t j = i + 1; j < count; ++j) {
+      if (path_crosses_wall({nodes[i], nodes[j]}, map)) {
+        continue;
+      }
+      const double length = distance(nodes[i], nodes[j]);
+      edges[i].push_back({j, length});
+      edges[j].push_back({i, length});
+    }
+  }
+
+  constexpr double kInf = 1.0e100;
+  std::vector<double> best(count, kInf);
+  std::vector<std::size_t> previous(count, count);
+  std::vector<char> used(count, 0);
+  best[0] = 0.0;
+  for (std::size_t step = 0; step < count; ++step) {
+    std::size_t current = count;
+    double current_best = kInf;
+    for (std::size_t index = 0; index < count; ++index) {
+      if (!used[index] && best[index] < current_best) {
+        current_best = best[index];
+        current = index;
+      }
+    }
+    if (current == count || current == 1) {
+      break;
+    }
+    used[current] = 1;
+    for (const auto& edge : edges[current]) {
+      const double next = best[current] + edge.second;
+      if (next < best[edge.first]) {
+        best[edge.first] = next;
+        previous[edge.first] = current;
+      }
+    }
+  }
+  if (!(best[1] < kInf)) {
+    return {};
+  }
+  std::vector<mars::common::Point2D> path;
+  for (std::size_t cursor = 1; cursor != count;) {
+    path.push_back(nodes[cursor]);
+    if (cursor == 0) {
+      break;
+    }
+    cursor = previous[cursor];
+  }
+  std::reverse(path.begin(), path.end());
+  return path;
+}
+
 bool goal_in_sight(mars::common::Point2D pose, mars::common::Point2D goal,
                    double radius, const LoadedMap& map) {
   if (distance(pose, goal) > radius) {
@@ -235,7 +334,14 @@ MissionResult run_mode1_mission(const Mode1Scenario& scenario,
     if (decision.event == "FUNNEL" &&
         path_crosses_wall(decision.planned_path.points, map) &&
         entry_path.size() >= 2) {
-      decision.planned_path.points.assign(entry_path.rbegin(), entry_path.rend());
+      const auto from = decision.planned_path.points.front();
+      const auto to = decision.planned_path.points.back();
+      auto taut =
+          taut_return(from, to, entry_path, map, config.vision_radius);
+      if (taut.size() < 2 || path_crosses_wall(taut, map)) {
+        taut.assign(entry_path.rbegin(), entry_path.rend());
+      }
+      decision.planned_path.points = std::move(taut);
       decision.planned_path.length = 0.0;
       for (std::size_t index = 1; index < decision.planned_path.points.size();
            ++index) {

@@ -18,13 +18,18 @@ void check_partition(const PerceptionResult& result) {
     double total=coverage(result);
     for (const auto& sight:result.open_sights) total+=sight.interval.sweep;
     EXPECT_NEAR(total,two_pi,20*angular_epsilon);
-    ASSERT_EQ(result.open_points.size(),result.open_sights.size());
-    for (std::size_t i=0;i<result.open_points.size();++i) {
-        const auto& point=result.open_points[i];
-        EXPECT_EQ(point.sight_index,i);
-        EXPECT_NEAR(distance(point.point,result.neighbor_sight.center),result.neighbor_sight.radius,1e-8);
-        EXPECT_NEAR(point.angle,angular_midpoint(result.open_sights[i].interval),1e-12);
+    std::vector<int> midpoints(result.open_sights.size(), 0);
+    for (const auto& point : result.open_points) {
+        ASSERT_TRUE(point.sight_index);
+        ASSERT_LT(*point.sight_index, result.open_sights.size());
+        EXPECT_NEAR(distance(point.point, result.neighbor_sight.center),
+                    result.neighbor_sight.radius, 1e-8);
+        const auto& interval = result.open_sights[*point.sight_index].interval;
+        double delta = std::abs(point.angle - angular_midpoint(interval));
+        if (delta > pi) delta = two_pi - delta;
+        if (delta < 1e-9) ++midpoints[*point.sight_index];
     }
+    for (int count : midpoints) EXPECT_EQ(count, 1);
 }
 // Independent test oracle: solve the 2x2 ray/edge equations directly, with no
 // production geometry helpers, no critical-angle subdivision and no clipping.
@@ -52,7 +57,7 @@ TEST(Pipeline, CaseAEmptyEnvironment) {
     const auto r=perceive({1,2},5,{});
     EXPECT_TRUE(r.neighbor_sight.visible_boundaries.empty());
     EXPECT_TRUE(r.closed_sights.empty());
-    ASSERT_EQ(r.open_sights.size(),1u); ASSERT_EQ(r.open_points.size(),1u);
+    ASSERT_EQ(r.open_sights.size(),1u); ASSERT_GT(r.open_points.size(),1u);
     EXPECT_DOUBLE_EQ(r.open_sights[0].interval.sweep,two_pi);
     EXPECT_NEAR(r.open_points[0].point.x,-4,1e-12);
     EXPECT_NEAR(r.open_points[0].point.y,2,1e-12);
@@ -78,15 +83,16 @@ TEST(Pipeline, CaseDNearWallHidesFarWall) {
 }
 TEST(Pipeline, CaseECorridor) {
     const auto r=perceive({0,0},5,{{{{-10,1},{10,1}}},{{{-10,-1},{10,-1}}}});
-    ASSERT_EQ(r.closed_sights.size(),2u); ASSERT_EQ(r.open_points.size(),2u);
+    ASSERT_EQ(r.closed_sights.size(),2u); ASSERT_GT(r.open_points.size(),2u);
     EXPECT_NEAR(r.open_points[0].angle,pi,1e-12);
-    EXPECT_NEAR(r.open_points[1].angle,0,1e-12);
+    EXPECT_TRUE(std::any_of(r.open_points.begin(), r.open_points.end(),
+                            [](const OpenPoint& point) { return std::abs(point.angle) < 1e-9; }));
     EXPECT_NEAR(coverage(r),two_pi-4*std::asin(0.2),1e-12); check_partition(r);
 }
 TEST(Pipeline, CaseFBlindAlleyPerceptionOnly) {
     const auto r=perceive({0,0},5,
         {{{{-2,-2},{2,-2}}},{{{2,-2},{2,2}}},{{{2,2},{-2,2}}}});
-    ASSERT_EQ(r.closed_sights.size(),1u); ASSERT_EQ(r.open_points.size(),1u);
+    ASSERT_EQ(r.closed_sights.size(),1u); ASSERT_GT(r.open_points.size(),1u);
     EXPECT_NEAR(coverage(r),3*pi/2,1e-12);
     EXPECT_NEAR(r.open_sights[0].interval.sweep,pi/2,1e-12);
     EXPECT_NEAR(r.open_points[0].angle,pi,1e-12); check_partition(r);

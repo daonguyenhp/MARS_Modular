@@ -15,4 +15,4 @@ polygon_explore_sim --map geogebra
 
 The follower stops at 0.10 m on intermediate waypoints and 0.08 m on the last point. The planner accepts a pose inside 0.15 m, so the two stop bands do not freeze the robot. A headless run also writes `mode1_<map>.svg` and prints the marker log.
 
-The RViz window is the ROS 2 launch `mars_mode1_sim polygon_explore_sim.launch.py`.
+The RViz window is `ros2/mars_mode1_sim` (`polygon_explore_sim.launch.py`) or the ROS 1 package `ros1/mars_mode1_sim`.

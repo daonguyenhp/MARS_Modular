@@ -24,4 +24,10 @@ if(BUILD_TESTING)
     target_link_libraries(perception_tests PRIVATE mars::perception_geometry GTest::gtest_main)
     include(GoogleTest)
     gtest_discover_tests(perception_tests)
+
+    # MD4.4: short standalone example (<50 lines), no ROS.
+    add_executable(mars_perception_geometry_example
+        examples/synthetic_perceive.cpp)
+    target_link_libraries(mars_perception_geometry_example
+        PRIVATE mars::perception_geometry)
 endif()

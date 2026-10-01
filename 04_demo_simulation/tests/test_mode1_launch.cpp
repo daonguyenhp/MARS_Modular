@@ -6,8 +6,8 @@
 #include <string>
 
 #include "mode1_mission.hpp"
-#include "mode1_shell.hpp"
 #include "mode1_trace.hpp"
+#include "navigator.hpp"
 #include "path_follower.hpp"
 
 namespace {
@@ -79,16 +79,20 @@ void test_loaded_map(const std::string& id, int width, int height,
 void test_first_tick(const std::string& id) {
   const auto& scenario = mars::demo_simulation::mode1_scenario(id);
   const auto map = load_named(id);
-  const auto tick = mars::demo_simulation::run_mode1_tick(scenario, map);
-  require(tick.wall_count == map.obstacles.size(),
-          id + " tick did not use the loaded obstacles");
-  require(tick.closed_sights + tick.open_sights > 0,
+  mars::demo_simulation::MissionConfig limits;
+  limits.max_observations = 1;
+  limits.max_follower_steps = 1;
+  const auto mission =
+      mars::demo_simulation::run_mode1_mission(scenario, map, limits);
+  require(!mission.frames.empty(), id + " recorded no sensing frame");
+  const auto& frame = mission.frames.front();
+  require(!frame.closed.empty() || !frame.open.empty(),
           id + " start pose sees no sights");
-  require(tick.open_points > 0, id + " start pose has no open points");
-  require(!tick.event.empty(), id + " produced no decision event");
+  require(!frame.open_points.empty(), id + " start pose has no open points");
+  require(!frame.event.empty(), id + " produced no decision event");
   std::cout << id << " obstacles=" << map.obstacles.size()
-            << " event=" << tick.event
-            << " open_points=" << tick.open_points << "\n";
+            << " event=" << frame.event
+            << " open_points=" << frame.open_points.size() << "\n";
 }
 
 void test_follower_reaches_path_end() {

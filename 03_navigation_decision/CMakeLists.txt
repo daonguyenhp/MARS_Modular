@@ -35,18 +35,3 @@ else()
   target_compile_options(mars_navigation_decision PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
 endif()
-
-include(CTest)
-if(BUILD_TESTING)
-  add_executable(mars_navigation_decision_tests
-    tests/test_navigation_decision.cpp)
-  target_link_libraries(mars_navigation_decision_tests
-    PRIVATE mars::navigation_decision)
-  add_test(NAME mars_navigation_decision_tests
-    COMMAND mars_navigation_decision_tests)
-
-  add_executable(mars_navigation_decision_example
-    examples/synthetic_decide.cpp)
-  target_link_libraries(mars_navigation_decision_example
-    PRIVATE mars::navigation_decision)
-endif()

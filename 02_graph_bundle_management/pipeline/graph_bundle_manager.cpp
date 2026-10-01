@@ -91,13 +91,21 @@ UpdateSummary GraphBundleManager::update(const GraphBundleUpdate& input) {
       throw std::invalid_argument("open point sight_index is out of range");
     }
     if (open_point.sight_index) {
-      const double midpoint = mars::perception_geometry::angular_midpoint(
-          input.perception.open_sights[*open_point.sight_index].interval);
-      if (std::abs(std::remainder(open_point.angle - midpoint,
-                                  mars::common::two_pi)) >
-          config_.angular_epsilon) {
+      const auto& interval =
+          input.perception.open_sights[*open_point.sight_index].interval;
+      double along = std::remainder(open_point.angle - interval.start,
+                                    mars::common::two_pi);
+      if (along < 0.0) {
+        along += mars::common::two_pi;
+      }
+      const bool full_circle =
+          interval.sweep >=
+          mars::common::two_pi - config_.angular_epsilon;
+      if (!full_circle &&
+          (along < -config_.angular_epsilon ||
+           along > interval.sweep + config_.angular_epsilon)) {
         throw std::invalid_argument(
-            "open point angle does not match its source open sight");
+            "open point angle is outside its source open sight");
       }
     }
     if (!neighbor_sight_supports_point(sight, open_point.point,
