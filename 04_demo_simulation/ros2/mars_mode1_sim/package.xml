@@ -4,7 +4,7 @@
   <name>mars_mode1_sim</name>
   <version>0.1.0</version>
   <description>Mode 1 demo: fake robot, planned path, and RViz markers.</description>
-  <maintainer email="imacs@localhost">IMACS</maintainer>
+  <maintainer email="imacs@example.com">IMACS</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

@@ -18,9 +18,15 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../.. ${CMAKE_CURRENT_BINARY_DIR
 
 add_executable(online_navigation_node src/online_navigation_node.cpp src/laser_geometry.cpp)
 target_include_directories(online_navigation_node PRIVATE include)
-target_link_libraries(online_navigation_node mars::demo_simulation)
-ament_target_dependencies(online_navigation_node
-  geometry_msgs nav_msgs rclcpp sensor_msgs std_msgs tf2_ros visualization_msgs)
+target_link_libraries(online_navigation_node PRIVATE
+  mars::demo_simulation
+  geometry_msgs::geometry_msgs
+  nav_msgs::nav_msgs
+  rclcpp::rclcpp
+  sensor_msgs::sensor_msgs
+  std_msgs::std_msgs
+  tf2_ros::tf2_ros
+  visualization_msgs::visualization_msgs)
 install(TARGETS online_navigation_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch rviz worlds DESTINATION share/${PROJECT_NAME})
 ament_package()
