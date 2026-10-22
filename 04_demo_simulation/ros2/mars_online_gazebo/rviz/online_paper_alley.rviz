@@ -1,0 +1,125 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Ground grid
+      Plane: XY
+      Cell Size: 0.5
+      Reference Frame: odom
+      Value: true
+    - Class: rviz_default_plugins/Map
+      Enabled: true
+      Name: LiDAR-built map
+      Alpha: 0.65
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mars_online/observed_map
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Enabled: true
+      Name: Live LiDAR
+      Size (m): 0.045
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Robot goal vision bundles
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mars_online/markers
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Complete driven trail
+      Color: 255; 170; 30
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mars_online/trail
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Entry path
+      Color: 255; 90; 40
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mars_online/entry_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Return path
+      Color: 45; 180; 255
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mars_online/return_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Current plan
+      Color: 60; 235; 70
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mars_online/planned_path
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 35; 35; 40
+    Fixed Frame: odom
+    Frame Rate: 20
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_pose
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 13
+      Focal Point:
+        X: 5
+        Y: 5
+        Z: 0
+      Pitch: 0.6
+      Yaw: 0.8
+      Name: 3D view
+      Target Frame: odom
+      Value: Orbit (rviz_default_plugins)
+Window Geometry:
+  Height: 900
+  Width: 1400

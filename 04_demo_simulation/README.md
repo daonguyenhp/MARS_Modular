@@ -31,3 +31,10 @@ The paper maze, drawn by modules 1–3 as four separate pictures:
 ```
 
 This writes `fig8a_sights.svg`, `fig8b_graph.svg`, `fig9b_bundles.svg`, and `fig9c_exit.svg` into `04_demo_simulation/output/`. Each file shows one layer. The map, start `(30, 22)`, goal `(86, 86)`, and radius `16` match the sketch. The paths are the C++ modules, so they will not match the sketch point for point.
+
+# Online Gazebo robot experiment
+
+The new [online Gazebo + RViz package](ros2/mars_online_gazebo/README.md)
+recreates the Python Figure 8/9 walls as a physical 3D world. It drives a
+differential-drive robot using live LiDAR and the C++ M1–M3 modules; it does
+not replay the Python figure's trajectory.
