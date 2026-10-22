@@ -3,7 +3,7 @@
   <name>mars_paper_rviz</name>
   <version>0.1.0</version>
   <description>ROS 2 RViz demos for Figure 8/9 playback and a moving 2-D LiDAR robot.</description>
-  <maintainer email="imacs@localhost">IMACS</maintainer>
+  <maintainer email="imacs@example.com">IMACS</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
