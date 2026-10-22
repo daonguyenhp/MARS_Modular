@@ -1102,8 +1102,11 @@ def run_mission(start: Point, goal: Point, radius: float,
         log=log, alpha=alpha, beta=beta,
     )
 
-import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, Polygon as MplPolygon
+def _load_plotting_backend() -> None:
+    """Keep the geometry usable by the ROS adapter without Matplotlib."""
+    global plt, Circle, MplPolygon
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle, Polygon as MplPolygon
 
 
 
@@ -1228,6 +1231,7 @@ def range_error(result: MissionResult) -> float:
 
 
 def render(result: MissionResult, path: str) -> None:
+    _load_plotting_backend()
     entry = _entry(result)
     error = range_error(result)
     figure, axes = plt.subplots(2, 2, figsize=(12.5, 11.5))
