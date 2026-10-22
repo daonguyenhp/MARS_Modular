@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -145,6 +146,18 @@ void test_marker_log_names_the_layers() {
   require(log.find("marker funnel") != std::string::npos, "funnel path");
   require(!mission.follower_stuck, "follower stalled on the opening hops");
   require(!mission.frames.empty(), "mission recorded no sensing frames");
+
+  const std::string svg_path = "mode1_layer_check.svg";
+  mars::demo_simulation::write_marker_svg(svg_path, map, mission);
+  const std::string svg = read_file(svg_path);
+  std::remove(svg_path.c_str());
+  require(svg.find("id=\"vision-circle\"") != std::string::npos, "svg vision circle");
+  require(svg.find("id=\"closed\"") != std::string::npos, "svg closed sights");
+  require(svg.find("id=\"open\"") != std::string::npos, "svg open sights");
+  require(svg.find("id=\"open-points\"") != std::string::npos, "svg open points");
+  require(svg.find("id=\"graph\"") != std::string::npos, "svg graph");
+  require(svg.find("id=\"bundles\"") != std::string::npos, "svg bundles");
+  require(svg.find("id=\"funnel\"") != std::string::npos, "svg funnel");
 }
 
 }  // namespace

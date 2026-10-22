@@ -33,6 +33,8 @@ struct MarkerFrame {
   std::vector<mars::common::Point2D> planned_path{};
   std::size_t bundles{0};
   std::vector<mars::common::Point2D> bundle_centers{};
+  /** Segments of every bundle stored at this sensing pose. */
+  std::vector<MarkerSegment> bundle_rays{};
   std::vector<mars::common::Point2D> funnel{};
   std::string event{};
   /** Index into MissionResult::trail at this sensing pose. */
@@ -44,6 +46,11 @@ struct MissionConfig {
   int max_follower_steps{2000};
   int stall_limit{20};
   double dt{0.1};
+  /** 0 keeps the JetTank default (r = 0.75, step = 0.70, slow follower). */
+  double vision_radius{0.0};
+  double max_step{0.0};
+  double follower_speed{0.0};
+  double arrival_tolerance{0.0};
 };
 
 struct MissionResult {

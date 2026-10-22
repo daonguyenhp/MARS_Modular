@@ -57,7 +57,7 @@ TEST(Pipeline, CaseAEmptyEnvironment) {
     const auto r=perceive({1,2},5,{});
     EXPECT_TRUE(r.neighbor_sight.visible_boundaries.empty());
     EXPECT_TRUE(r.closed_sights.empty());
-    ASSERT_EQ(r.open_sights.size(),1u); ASSERT_GT(r.open_points.size(),1u);
+    ASSERT_EQ(r.open_sights.size(),1u); ASSERT_EQ(r.open_points.size(),1u);
     EXPECT_DOUBLE_EQ(r.open_sights[0].interval.sweep,two_pi);
     EXPECT_NEAR(r.open_points[0].point.x,-4,1e-12);
     EXPECT_NEAR(r.open_points[0].point.y,2,1e-12);
@@ -83,7 +83,7 @@ TEST(Pipeline, CaseDNearWallHidesFarWall) {
 }
 TEST(Pipeline, CaseECorridor) {
     const auto r=perceive({0,0},5,{{{{-10,1},{10,1}}},{{{-10,-1},{10,-1}}}});
-    ASSERT_EQ(r.closed_sights.size(),2u); ASSERT_GT(r.open_points.size(),2u);
+    ASSERT_EQ(r.closed_sights.size(),2u); ASSERT_EQ(r.open_points.size(),2u);
     EXPECT_NEAR(r.open_points[0].angle,pi,1e-12);
     EXPECT_TRUE(std::any_of(r.open_points.begin(), r.open_points.end(),
                             [](const OpenPoint& point) { return std::abs(point.angle) < 1e-9; }));
@@ -92,7 +92,7 @@ TEST(Pipeline, CaseECorridor) {
 TEST(Pipeline, CaseFBlindAlleyPerceptionOnly) {
     const auto r=perceive({0,0},5,
         {{{{-2,-2},{2,-2}}},{{{2,-2},{2,2}}},{{{2,2},{-2,2}}}});
-    ASSERT_EQ(r.closed_sights.size(),1u); ASSERT_GT(r.open_points.size(),1u);
+    ASSERT_EQ(r.closed_sights.size(),1u); ASSERT_EQ(r.open_points.size(),1u);
     EXPECT_NEAR(coverage(r),3*pi/2,1e-12);
     EXPECT_NEAR(r.open_sights[0].interval.sweep,pi/2,1e-12);
     EXPECT_NEAR(r.open_points[0].angle,pi,1e-12); check_partition(r);

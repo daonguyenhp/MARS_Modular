@@ -14,4 +14,4 @@ RViz is the Mode 1 viewer. The ROS 1 node in `ros1/mars_mode1_sim` publishes:
 roslaunch mars_mode1_sim polygon_explore_sim.launch map:=hard_alley
 ```
 
-The headless run still writes `mode1_<map>.svg` and the same layer names in the text log.
+The headless run writes `04_demo_simulation/output/mode1_<map>.svg` from the same layers: vision circles, closed and open sights, open points, the visibility graph, bundle rays, the driven trail, and the funnel. The text log lists those layer names.

@@ -343,4 +343,42 @@ LoadedMap load_occupancy_map(const std::string& yaml_path) {
   return map;
 }
 
+namespace {
+
+mars::common::Polygon2D box(double x0, double y0, double x1, double y1) {
+  mars::common::Polygon2D polygon;
+  polygon.vertices = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
+  return polygon;
+}
+
+}  // namespace
+
+Mode1Scenario paper_fig8_scenario() {
+  Mode1Scenario scenario;
+  scenario.id = "fig8";
+  scenario.start = {30.0, 22.0};
+  scenario.goal = {86.0, 86.0};
+  return scenario;
+}
+
+LoadedMap paper_fig8_map() {
+  LoadedMap map;
+  map.yaml_path = "fig8";
+  map.resolution = 1.0;
+  map.origin = {0.0, 0.0};
+  map.width = 100;
+  map.height = 100;
+  map.obstacles = {
+      box(0, 0, 100, 4),    box(0, 0, 4, 100),
+      box(96, 0, 100, 100), box(0, 96, 100, 100),
+      box(16, 14, 24, 24),  box(40, 12, 50, 22),
+      box(18, 28, 26, 36),  box(16, 32, 28, 72),
+      box(40, 28, 50, 52),  box(16, 72, 78, 80),
+      box(52, 44, 78, 56),  box(70, 56, 78, 72),
+      box(48, 4, 90, 14),   box(84, 40, 92, 58),
+      box(78, 74, 96, 92),  box(4, 70, 18, 90),
+  };
+  return map;
+}
+
 }  // namespace mars::demo_simulation

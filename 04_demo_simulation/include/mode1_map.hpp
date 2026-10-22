@@ -38,6 +38,10 @@ std::vector<std::string> mode1_map_ids();
 /** Throws std::invalid_argument when id is not hard_alley or geogebra. */
 const Mode1Scenario& mode1_scenario(std::string_view id);
 
+/** Polygon maze used by the paper-style Figure 8 / Figure 9 panels. */
+Mode1Scenario paper_fig8_scenario();
+LoadedMap paper_fig8_map();
+
 /** Throws std::runtime_error when the yaml or pgm cannot be read. */
 LoadedMap load_occupancy_map(const std::string& yaml_path);
 

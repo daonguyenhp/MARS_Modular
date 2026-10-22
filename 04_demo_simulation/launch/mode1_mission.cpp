@@ -214,6 +214,15 @@ MarkerFrame make_frame(
   frame.bundles = manager.bundle_history().size();
   for (const auto& bundle : manager.bundle_history().bundles()) {
     frame.bundle_centers.push_back(bundle.concurrent_point);
+    if (!bundle.segments.empty()) {
+      for (const auto& segment : bundle.segments) {
+        frame.bundle_rays.push_back({segment.start, segment.end});
+      }
+    } else {
+      for (const auto& vertex : bundle.ordered_vertices) {
+        frame.bundle_rays.push_back({bundle.concurrent_point, vertex});
+      }
+    }
   }
   if (decision.event == "FUNNEL") {
     frame.funnel = decision.planned_path.points;
@@ -226,12 +235,27 @@ MarkerFrame make_frame(
 MissionResult run_mode1_mission(const Mode1Scenario& scenario,
                                 const LoadedMap& map, MissionConfig limits) {
   mars::navigation_decision::NavigationConfig config;
+  if (limits.vision_radius > 0.0) {
+    config.vision_radius = limits.vision_radius;
+  }
+  if (limits.max_step > 0.0) {
+    config.max_step = limits.max_step;
+  }
+  if (limits.arrival_tolerance > 0.0) {
+    config.arrival_tolerance = limits.arrival_tolerance;
+    config.goal_tolerance = limits.arrival_tolerance;
+  }
   mars::graph_bundle_management::GraphBundleConfig bundle_config;
   bundle_config.gate_contract_enabled = true;
   mars::graph_bundle_management::GraphBundleManager manager(bundle_config);
   mars::navigation_decision::Navigator navigator(config);
   FakeOdom odom{{scenario.start, 0.0}};
-  PathFollower follower;
+  FollowerConfig follower_config;
+  if (limits.follower_speed > 0.0) {
+    follower_config.max_linear_speed = limits.follower_speed;
+    follower_config.max_angular_speed = 2.0;
+  }
+  PathFollower follower(follower_config);
 
   MissionResult mission;
   mission.trail.push_back(scenario.start);

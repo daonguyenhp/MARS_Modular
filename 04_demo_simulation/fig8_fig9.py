@@ -1,4 +1,7 @@
-"""Figure 8 and Figure 9. From MARS_Modular/04_demo_simulation: python fig8_fig9.py"""
+"""Paper-figure sketch. This file does not call modules 1–3.
+
+The customer picture is mode1_<map>.svg from polygon_explore_sim.
+"""
 
 from __future__ import annotations
 
