@@ -1,6 +1,44 @@
 # Module 4: Demo and Simulation
 
-## Figure 8/9 Python simulation in ROS 2 RViz
+## Moving 2-D robot with simulated LiDAR in ROS 2 RViz
+
+`ros2/mars_paper_rviz` now has a **live** mode. A virtual robot moves at
+constant speed through the Figure 8/9 obstacle map. A raycast LiDAR publishes
+`/scan` from its changing pose; the robot publishes `map -> base_link` TF,
+pose and travelled path. At each reached waypoint, the existing Python
+Figure 8/9 algorithm performs a new sight scan, chooses an open point, or
+computes the bundle/DAP route out of the blind alley. The escape path is then
+driven by the robot rather than replayed as precomputed frames.
+
+On Ubuntu 26.04 / ROS 2 Lyrical, with this repository at
+`~/hcmut/ros2_ws/mars_ws/src/MARS_Modular`:
+
+```bash
+source /opt/ros/lyrical/setup.bash
+cd ~/hcmut/ros2_ws/mars_ws
+colcon build --base-paths src/MARS_Modular/04_demo_simulation/ros2 \
+  --packages-select mars_paper_rviz --symlink-install
+source install/setup.bash
+ros2 launch mars_paper_rviz live_lidar.launch.py
+```
+
+The robot moves 8 map units/second by default; use `speed:=3.0` to slow it.
+In a second sourced terminal, `ros2 topic echo /paper/status` reports the
+current phase and scan count. RViz displays the occupancy map, LiDAR returns,
+robot, 16-unit sensing radius, open points, route into the alley and actual
+DAP escape. It stops after the **first** escape, matching the Figure 8/9
+demonstration. The original goal `(86,86)` is inside a wall, so live mode uses
+the free reference goal `(86,94)`; goal-reaching is **not** claimed.
+
+This is a 2-D kinematic simulation, **not Gazebo physics or a hardware robot**.
+The LiDAR returns and algorithm's `perceive()` both raycast the same known
+obstacle geometry. In particular, the planner does **not yet subscribe to
+`/scan`** or build an unknown map from sensor data. Integrating a real/simulated
+LiDAR driver and perception adapter is a separate step before deploying this
+on a robot. RViz visualizes the ROS topics; the Python node supplies motion
+and sensor simulation.
+
+## Original Figure 8/9 playback in ROS 2 RViz
 
 `ros2/mars_paper_rviz` plays back the **existing** `fig8_fig9.py` result. It
 publishes the 100-by-100 scenario obstacle map, robot pose, accumulated

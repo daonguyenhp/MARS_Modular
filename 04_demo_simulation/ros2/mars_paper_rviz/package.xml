@@ -2,7 +2,7 @@
 <package format="3">
   <name>mars_paper_rviz</name>
   <version>0.1.0</version>
-  <description>RViz playback of the original Figure 8/9 Python simulation.</description>
+  <description>ROS 2 RViz demos for Figure 8/9 playback and a moving 2-D LiDAR robot.</description>
   <maintainer email="imacs@localhost">IMACS</maintainer>
   <license>Apache-2.0</license>
 
@@ -13,7 +13,9 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
 
   <export>

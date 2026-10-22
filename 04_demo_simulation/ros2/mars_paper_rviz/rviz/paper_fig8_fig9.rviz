@@ -36,6 +36,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /paper/markers
       Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Enabled: true
+      Name: Simulated LiDAR returns
+      Style: Points
+      Size (Pixels): 3
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /scan
+      Value: true
     - Class: rviz_default_plugins/Path
       Color: 220; 40; 40
       Enabled: true
