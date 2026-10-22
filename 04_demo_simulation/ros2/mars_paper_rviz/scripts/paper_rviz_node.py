@@ -87,9 +87,10 @@ class PaperRvizNode(Node):
         if self.result.escape:
             escape = self.result.escape
             self.get_logger().info(
-                "Paper run: %d scans, %d raw crossings, entry/retrace %.2f, "
-                "DAP exit %.2f", len(self.result.snapshots),
-                len(escape.crossings), escape.entry_length, escape.exit_length)
+                f"Paper run: {len(self.result.snapshots)} scans, "
+                f"{len(escape.crossings)} raw crossings, "
+                f"entry/retrace {escape.entry_length:.2f}, "
+                f"DAP exit {escape.exit_length:.2f}")
         else:
             self.get_logger().warn("Paper run has no blind-alley escape")
 

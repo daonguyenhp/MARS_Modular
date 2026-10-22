@@ -1,5 +1,6 @@
 """Checks for the data which the RViz adapter publishes unchanged."""
 
+import ast
 import importlib.util
 from pathlib import Path
 import sys
@@ -51,6 +52,19 @@ class PaperDemoDataTest(unittest.TestCase):
         for start, end in zip(escape.exit_path, escape.exit_path[1:]):
             self.assertFalse(paper.segment_hits_obstacles(
                 start, end, self.result.obstacles))
+
+    def test_rclpy_log_calls_receive_one_message(self):
+        node_source = (SOURCE.parent / "ros2" / "mars_paper_rviz" / "scripts"
+                       / "paper_rviz_node.py")
+        tree = ast.parse(node_source.read_text(encoding="utf-8"))
+        for call in ast.walk(tree):
+            if (isinstance(call, ast.Call) and
+                    isinstance(call.func, ast.Attribute) and
+                    call.func.attr in {"info", "warn", "error", "debug"} and
+                    isinstance(call.func.value, ast.Call) and
+                    isinstance(call.func.value.func, ast.Attribute) and
+                    call.func.value.func.attr == "get_logger"):
+                self.assertEqual(len(call.args), 1)
 
 
 if __name__ == "__main__":
