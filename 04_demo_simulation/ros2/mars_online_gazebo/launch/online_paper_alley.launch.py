@@ -21,6 +21,7 @@ def generate_launch_description():
     start_y = LaunchConfiguration("start_y")
     goal_x = LaunchConfiguration("goal_x")
     goal_y = LaunchConfiguration("goal_y")
+    status_log = LaunchConfiguration("status_log")
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(str(gz_share / "launch" / "gz_sim.launch.py")),
         launch_arguments={"gz_args": f"-r {world}"}.items(),
@@ -39,7 +40,8 @@ def generate_launch_description():
     )
     navigation = Node(
         package="mars_online_gazebo", executable="online_navigation_node",
-        parameters=[{"use_sim_time": True, "goal_x": goal_x, "goal_y": goal_y}],
+        parameters=[{"use_sim_time": True, "goal_x": goal_x, "goal_y": goal_y,
+                     "status_log": status_log}],
         output="screen",
     )
     rviz = Node(
@@ -54,5 +56,6 @@ def generate_launch_description():
         DeclareLaunchArgument("start_y", default_value="6.0"),
         DeclareLaunchArgument("goal_x", default_value="8.6"),
         DeclareLaunchArgument("goal_y", default_value="6.8"),
+        DeclareLaunchArgument("status_log", default_value="/tmp/mars_online_status.csv"),
         gazebo, robot, bridge, navigation, rviz,
     ])
