@@ -397,7 +397,7 @@ class OnlineJetTankNode {
             [&](const mars::navigation_decision::ReachableRoute& route) {
               const auto steps = mars::navigation_decision::cap_last_hop(route.skeleton, config_.max_step);
               for (const auto& visited : entry_path_) {
-                if (distance(visited, pose_.position) < 1e-9) continue;
+                if (distance(visited, pose_.position) <= config_.linear_epsilon) continue;
                 for (std::size_t i = 1; i < steps.size(); ++i) {
                   if (distance(visited, steps[i]) <= config_.arrival_tolerance) return true;
                 }
@@ -416,6 +416,8 @@ class OnlineJetTankNode {
 
     auto decision = navigator_->decide(observation);
     if (decision.event == "BAR") {
+      ROS_INFO("Observation %zu: Blind Alley Detected! Transitioning to DAP Funnel...",
+               static_cast<std::size_t>(observation_id_));
       decision = navigator_->decide(observation); // transition to FUNNEL immediately
     }
     current_event_ = decision.event;
@@ -424,6 +426,10 @@ class OnlineJetTankNode {
     ROS_INFO("Observation %zu: event=%s, planned points=%zu, walls=%zu, open_points=%zu",
              static_cast<std::size_t>(observation_id_),
              current_event_.c_str(), planned_.size(), obstacles.size(), perception.open_points.size());
+    if (planned_.size() >= 2) {
+      ROS_INFO("Target waypoint: (%.2f, %.2f), distance: %.2fm",
+               planned_.back().x, planned_.back().y, distance(pose_.position, planned_.back()));
+    }
 
     if (decision.state == mars::navigation_decision::NavigationState::GoalReached ||
         decision.state == mars::navigation_decision::NavigationState::Failed ||

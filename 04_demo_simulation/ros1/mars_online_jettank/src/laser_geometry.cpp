@@ -69,7 +69,7 @@ std::vector<Polygon2D> scan_to_obstacles(const LaserFrame& scan,
                          static_cast<double>(i) * scan.angle_increment;
     const Point2D point{pose.position.x + r * std::cos(theta),
                         pose.position.y + r * std::sin(theta)};
-    if (!cluster.empty() && distance(cluster.back(), point) > 0.12) flush();
+    if (!cluster.empty() && distance(cluster.back(), point) > 0.25) flush();
     cluster.push_back(point);
   }
   flush();
