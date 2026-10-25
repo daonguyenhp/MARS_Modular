@@ -255,17 +255,19 @@ class OnlineJetTankNode {
                                         std::cos(target_yaw - pose_.yaw));
 
     // Tracked tank (bánh xe tăng) skid-steer behavior:
-    // 1. Pivot in place until aligned within ~10 degrees (0.18 rad)
-    if (std::abs(yaw_error) > 0.18) {
+    // 1. Pivot in place until aligned within ~5 degrees (0.08 rad)
+    if (std::abs(yaw_error) > (is_pivoting_ ? 0.08 : 0.20)) {
+      is_pivoting_ = true;
       cmd.linear_x = 0.0;
-      const double raw_w = 1.6 * yaw_error;
+      const double raw_w = 1.8 * yaw_error;
       const double min_turn_w = 0.28; // overcomes track static friction in Gazebo
-      const double max_turn_w = 0.70;
+      const double max_turn_w = 0.75;
       const double mag_w = std::clamp(std::abs(raw_w), min_turn_w, max_turn_w);
       cmd.angular_z = std::copysign(mag_w, yaw_error);
     } else {
       // 2. Aligned! Drive straight forward along ray with fine angular correction
-      const double max_v = 0.20;
+      is_pivoting_ = false;
+      const double max_v = 0.22;
       cmd.linear_x = std::clamp(gap, 0.06, max_v);
       cmd.angular_z = 1.2 * yaw_error;
     }
@@ -310,25 +312,13 @@ class OnlineJetTankNode {
           return;
         }
 
-        // Safety collision check: JetTank front bumper clearance
-        const double clearance = forward_clearance(scan_);
-        if (command.linear_x > 0 && clearance < 0.04) {
-          // Pause linear forward drive, allow turning to steer clear
-          Twist twist;
-          twist.linear.x = 0.0;
-          twist.angular.z = command.angular_z;
-          cmd_pub_.publish(twist);
-          jettank_cmd_pub_.publish(twist);
-          ROS_WARN_THROTTLE(2.0, "Safety pause: front obstacle at %.2fm from bumper", clearance);
-        } else {
-          Twist twist;
-          twist.linear.x = command.linear_x;
-          twist.angular.z = command.angular_z;
-          cmd_pub_.publish(twist);
-          jettank_cmd_pub_.publish(twist);
-          if (trail_.empty() || distance(trail_.back(), pose_.position) > 0.03) {
-            trail_.push_back(pose_.position);
-          }
+        Twist twist;
+        twist.linear.x = command.linear_x;
+        twist.angular.z = command.angular_z;
+        cmd_pub_.publish(twist);
+        jettank_cmd_pub_.publish(twist);
+        if (trail_.empty() || distance(trail_.back(), pose_.position) > 0.03) {
+          trail_.push_back(pose_.position);
         }
       }
     } else if (ros::Time::now() >= settle_time_ && scan_sequence_ > scan_used_) {
@@ -548,7 +538,7 @@ class OnlineJetTankNode {
   ros::Time progress_time_{}, scan_time_{}, last_tf_stamp_{}, settle_time_{};
   std::uint64_t scan_sequence_{0}, scan_used_{0}, observation_id_{0};
   std::size_t planned_index_{0};
-  bool have_pose_{false}, active_{false}, terminal_{false};
+  bool have_pose_{false}, active_{false}, terminal_{false}, is_pivoting_{false};
   int safety_stops_{0};
 
   ros::Subscriber scan_sub_, scan_sub_fallback_, odom_sub_, model_states_sub_, goal_sub_;
