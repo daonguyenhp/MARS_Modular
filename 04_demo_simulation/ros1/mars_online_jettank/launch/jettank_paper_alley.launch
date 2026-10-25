@@ -1,0 +1,68 @@
+<launch>
+  <!-- Gazebo & World Configuration -->
+  <arg name="gui" default="true" doc="Launch Gazebo graphical client" />
+  <arg name="rviz" default="true" doc="Launch RViz visualization" />
+  <arg name="world_name" default="$(find mars_online_jettank)/worlds/paper_alley.world" />
+
+  <!-- Robot Initial Spawn Pose (Entering paper blind alley at C0) -->
+  <arg name="x" default="3.0" />
+  <arg name="y" default="2.2" />
+  <arg name="z" default="0.05" />
+  <arg name="yaw" default="1.5708" />
+
+  <!-- Navigation & Sensor Parameters -->
+  <arg name="vision_radius" default="1.6" />
+  <arg name="max_step" default="2.0" />
+  <arg name="goal_x" default="8.6" />
+  <arg name="goal_y" default="6.8" />
+  <arg name="scan_topic" default="scan_raw" />
+
+  <!-- Robot Description Model Source:
+       Set use_hiwonder_pkg to true if running inside Hiwonder JetTank workspace with hiwonder_description.
+       Default false uses the self-contained JetTank URDF in this package. -->
+  <arg name="use_hiwonder_pkg" default="false" />
+  <arg name="robot_name" default="jettank" />
+
+  <!-- 1. Start Gazebo with Paper Alley World -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world_name)" />
+    <arg name="paused" value="false" />
+    <arg name="use_sim_time" value="true" />
+    <arg name="gui" value="$(arg gui)" />
+    <arg name="headless" value="false" />
+    <arg name="debug" value="false" />
+  </include>
+
+  <!-- 2. Load Robot Description -->
+  <group if="$(arg use_hiwonder_pkg)">
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder '$(find hiwonder_description)/urdf/$(arg robot_name).urdf.xacro'" />
+  </group>
+  <group unless="$(arg use_hiwonder_pkg)">
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder '$(find mars_online_jettank)/urdf/jettank.urdf.xacro'" />
+  </group>
+
+  <!-- 3. Spawn JetTank Model in Gazebo -->
+  <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
+        args="-urdf -model $(arg robot_name) -x $(arg x) -y $(arg y) -z $(arg z) -Y $(arg yaw) -param robot_description" />
+
+  <!-- 4. State Publisher -->
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" output="screen">
+    <param name="publish_frequency" type="double" value="50.0" />
+  </node>
+
+  <!-- 5. MARS Online JetTank Navigator Node -->
+  <node name="online_jettank_node" pkg="mars_online_jettank" type="online_jettank_node" output="screen">
+    <param name="vision_radius" value="$(arg vision_radius)" />
+    <param name="max_step" value="$(arg max_step)" />
+    <param name="goal_x" value="$(arg goal_x)" />
+    <param name="goal_y" value="$(arg goal_y)" />
+    <param name="scan_topic" value="$(arg scan_topic)" />
+  </node>
+
+  <!-- 6. RViz Display -->
+  <group if="$(arg rviz)">
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find mars_online_jettank)/rviz/jettank_paper_alley.rviz" />
+  </group>
+</launch>

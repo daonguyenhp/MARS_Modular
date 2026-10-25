@@ -31,3 +31,12 @@ The paper maze, drawn by modules 1–3 as four separate pictures:
 ```
 
 This writes `fig8a_sights.svg`, `fig8b_graph.svg`, `fig9b_bundles.svg`, and `fig9c_exit.svg` into `04_demo_simulation/output/`. Each file shows one layer. The map, start `(30, 22)`, goal `(86, 86)`, and radius `16` match the sketch. The paths are the C++ modules, so they will not match the sketch point for point.
+
+## Online Gazebo Simulation (ROS 1 & JetTank)
+
+To run real-time Gazebo simulation with the Hiwonder JetTank on ROS 1 (Melodic / Noetic):
+See [mars_online_jettank](ros1/mars_online_jettank/README.md):
+```bash
+roslaunch mars_online_jettank jettank_paper_alley.launch
+```
+
