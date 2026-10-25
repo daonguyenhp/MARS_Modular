@@ -26,7 +26,7 @@ bool target_visible_in_scan(const LaserFrame& scan,
 bool is_point_occluded_in_scan(const LaserFrame& scan,
                                mars::common::Pose2D pose,
                                mars::common::Point2D target,
-                               double margin = 0.15);
+                               double margin = 0.03);
 
 double forward_clearance(const LaserFrame& scan);
 

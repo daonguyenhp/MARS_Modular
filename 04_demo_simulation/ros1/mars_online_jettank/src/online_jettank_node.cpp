@@ -337,9 +337,20 @@ class OnlineJetTankNode {
     latest_perception_ = mars::perception_geometry::perceive(
         pose_.position, config_.vision_radius, latest_obstacles_);
 
+    auto point_to_segment_dist = [](Point2D p, Point2D a, Point2D b) {
+      const double dx = b.x - a.x;
+      const double dy = b.y - a.y;
+      const double len_sq = dx * dx + dy * dy;
+      if (len_sq < 1e-9) return distance(p, a);
+      const double t = std::clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq, 0.0, 1.0);
+      const Point2D proj{a.x + t * dx, a.y + t * dy};
+      return distance(p, proj);
+    };
+
     // Sanitize open points:
     // 1. Must satisfy neighbor_sight_supports_point
     // 2. Direct line-of-sight must NOT be occluded by raw laser scan returns
+    // 3. Candidate open point must have safe clearance from all obstacle walls (>= 0.16m)
     latest_perception_.open_points.erase(
         std::remove_if(latest_perception_.open_points.begin(), latest_perception_.open_points.end(),
                        [&](const mars::perception_geometry::OpenPoint& op) {
@@ -347,8 +358,15 @@ class OnlineJetTankNode {
                                  latest_perception_.neighbor_sight, op.point, config_.linear_epsilon)) {
                            return true;
                          }
-                         if (is_point_occluded_in_scan(scan_, pose_, op.point, 0.15)) {
+                         if (is_point_occluded_in_scan(scan_, pose_, op.point, 0.03)) {
                            return true;
+                         }
+                         for (const auto& poly : latest_obstacles_) {
+                           if (poly.vertices.size() >= 2) {
+                             if (point_to_segment_dist(op.point, poly.vertices.front(), poly.vertices.back()) < 0.16) {
+                               return true;
+                             }
+                           }
                          }
                          return false;
                        }),

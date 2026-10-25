@@ -145,7 +145,7 @@ bool is_point_occluded_in_scan(const LaserFrame& scan,
       }
     }
   }
-  return (valid_rays > 0 && blocked_rays >= (valid_rays / 2 + 1));
+  return (valid_rays > 0 && blocked_rays >= 2);
 }
 
 double forward_clearance(const LaserFrame& scan) {
