@@ -12,9 +12,9 @@
 
   <!-- Navigation & Sensor Parameters -->
   <arg name="vision_radius" default="1.6" />
-  <arg name="max_step" default="0.70" />
+  <arg name="max_step" default="2.0" />
   <arg name="goal_x" default="8.6" />
-  <arg name="goal_y" default="6.8" />
+  <arg name="goal_y" default="8.6" />
   <arg name="scan_topic" default="scan_raw" />
 
   <!-- Robot Description Model Source:

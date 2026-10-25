@@ -78,12 +78,12 @@ class OnlineJetTankNode {
   explicit OnlineJetTankNode(ros::NodeHandle& nh, ros::NodeHandle& pnh)
       : nh_(nh), pnh_(pnh) {
     pnh_.param("vision_radius", config_.vision_radius, 1.6);
-    pnh_.param("max_step", config_.max_step, 0.70);
+    pnh_.param("max_step", config_.max_step, 2.0);
     pnh_.param("arrival_tolerance", config_.arrival_tolerance, 0.15);
-    pnh_.param("goal_tolerance", config_.goal_tolerance, 0.15);
+    pnh_.param("goal_tolerance", config_.goal_tolerance, 0.12);
     pnh_.param("linear_epsilon", config_.linear_epsilon, 0.03);
     pnh_.param("goal_x", goal_.x, 8.6);
-    pnh_.param("goal_y", goal_.y, 6.8);
+    pnh_.param("goal_y", goal_.y, 8.6);
     pnh_.param("robot_name", robot_name_, std::string("jettank"));
 
     mars::graph_bundle_management::GraphBundleConfig bundle_cfg;
@@ -218,6 +218,60 @@ class OnlineJetTankNode {
     jettank_cmd_pub_.publish(zero);
   }
 
+  struct TrackedCommand {
+    double linear_x{0.0};
+    double angular_z{0.0};
+    bool done{false};
+  };
+
+  TrackedCommand compute_tank_step() {
+    TrackedCommand cmd;
+    if (planned_index_ >= planned_.size()) {
+      cmd.done = true;
+      return cmd;
+    }
+
+    // Skip waypoints already reached
+    while (planned_index_ < planned_.size()) {
+      const bool is_last = (planned_index_ + 1 == planned_.size());
+      const double tol = is_last ? config_.goal_tolerance : config_.arrival_tolerance;
+      if (distance(pose_.position, planned_[planned_index_]) > tol) {
+        break;
+      }
+      ++planned_index_;
+    }
+
+    if (planned_index_ >= planned_.size()) {
+      cmd.done = true;
+      return cmd;
+    }
+
+    const Point2D target = planned_[planned_index_];
+    const double dx = target.x - pose_.position.x;
+    const double dy = target.y - pose_.position.y;
+    const double gap = std::hypot(dx, dy);
+    const double target_yaw = std::atan2(dy, dx);
+    const double yaw_error = std::atan2(std::sin(target_yaw - pose_.yaw),
+                                        std::cos(target_yaw - pose_.yaw));
+
+    // Tracked tank (bánh xe tăng) skid-steer behavior:
+    // 1. Pivot in place until aligned within ~10 degrees (0.18 rad)
+    if (std::abs(yaw_error) > 0.18) {
+      cmd.linear_x = 0.0;
+      const double raw_w = 1.6 * yaw_error;
+      const double min_turn_w = 0.28; // overcomes track static friction in Gazebo
+      const double max_turn_w = 0.70;
+      const double mag_w = std::clamp(std::abs(raw_w), min_turn_w, max_turn_w);
+      cmd.angular_z = std::copysign(mag_w, yaw_error);
+    } else {
+      // 2. Aligned! Drive straight forward along ray with fine angular correction
+      const double max_v = 0.20;
+      cmd.linear_x = std::clamp(gap, 0.06, max_v);
+      cmd.angular_z = 1.2 * yaw_error;
+    }
+    return cmd;
+  }
+
   void control_step(const ros::TimerEvent&) {
     if (!have_pose_ || scan_.ranges.empty()) {
       return;
@@ -229,10 +283,11 @@ class OnlineJetTankNode {
     }
 
     if (active_) {
-      const auto command = follower_->compute(pose_);
-      if (follower_->path_done()) {
+      const auto command = compute_tank_step();
+      if (command.done) {
         stop_robot();
         active_ = false;
+        settle_time_ = ros::Time::now() + ros::Duration(0.35); // settle before scanning next center
         if (current_event_ == "EXPLORE" || current_event_ == "GOAL_VISIBLE") {
           entry_path_.push_back(pose_.position);
           entry_trace_.push_back(pose_.position);
@@ -246,7 +301,7 @@ class OnlineJetTankNode {
           progress_pose_ = pose_;
           progress_time_ = ros::Time::now();
         }
-        if ((ros::Time::now() - progress_time_).toSec() > 15.0) {
+        if ((ros::Time::now() - progress_time_).toSec() > 20.0) {
           stop_robot();
           active_ = false;
           terminal_ = true;
@@ -255,15 +310,17 @@ class OnlineJetTankNode {
           return;
         }
 
-        // Safety collision check: JetTank front clearance
-        if (command.linear_x > 0 && forward_clearance(scan_) < 0.20) {
-          stop_robot();
-          active_ = false;
-          current_event_ = ++safety_stops_ >= 3 ? "SAFETY_BLOCKED" : "SAFETY_STOP";
-          if (safety_stops_ >= 3) terminal_ = true;
-          ROS_WARN("Safety stop triggered! Clearance: %.2fm", forward_clearance(scan_));
+        // Safety collision check: JetTank front bumper clearance
+        const double clearance = forward_clearance(scan_);
+        if (command.linear_x > 0 && clearance < 0.04) {
+          // Pause linear forward drive, allow turning to steer clear
+          Twist twist;
+          twist.linear.x = 0.0;
+          twist.angular.z = command.angular_z;
+          cmd_pub_.publish(twist);
+          jettank_cmd_pub_.publish(twist);
+          ROS_WARN_THROTTLE(2.0, "Safety pause: front obstacle at %.2fm from bumper", clearance);
         } else {
-          if (command.linear_x > 0) safety_stops_ = 0;
           Twist twist;
           twist.linear.x = command.linear_x;
           twist.angular.z = command.angular_z;
@@ -274,7 +331,7 @@ class OnlineJetTankNode {
           }
         }
       }
-    } else if (scan_sequence_ > scan_used_) {
+    } else if (ros::Time::now() >= settle_time_ && scan_sequence_ > scan_used_) {
       try {
         plan_from_current_scan();
       } catch (const std::exception& e) {
@@ -399,7 +456,7 @@ class OnlineJetTankNode {
       return;
     }
 
-    follower_->set_path(planned_);
+    planned_index_ = 0;
     progress_pose_ = pose_;
     progress_time_ = ros::Time::now();
     active_ = true;
@@ -488,8 +545,9 @@ class OnlineJetTankNode {
   LaserFrame scan_{};
   std::vector<Point2D> entry_path_, trail_, planned_, entry_trace_, return_trace_;
   std::string current_event_{"INIT"};
-  ros::Time progress_time_{}, scan_time_{}, last_tf_stamp_{};
+  ros::Time progress_time_{}, scan_time_{}, last_tf_stamp_{}, settle_time_{};
   std::uint64_t scan_sequence_{0}, scan_used_{0}, observation_id_{0};
+  std::size_t planned_index_{0};
   bool have_pose_{false}, active_{false}, terminal_{false};
   int safety_stops_{0};
 

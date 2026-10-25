@@ -95,11 +95,18 @@ bool target_visible_in_scan(const LaserFrame& scan,
 double forward_clearance(const LaserFrame& scan) {
   double closest = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < scan.ranges.size(); ++i) {
-    const double angle = scan.angle_min + static_cast<double>(i) * scan.angle_increment;
-    const double wrapped = std::atan2(std::sin(angle), std::cos(angle));
-    if (std::abs(wrapped) > 0.30) continue;
     const double r = static_cast<double>(scan.ranges[i]);
-    if (std::isfinite(r) && r > scan.range_min) closest = std::min(closest, r);
+    if (!std::isfinite(r) || r < scan.range_min || r > scan.range_max) continue;
+    const double angle = scan.angle_min + static_cast<double>(i) * scan.angle_increment;
+    const double x = r * std::cos(angle);
+    const double y = r * std::sin(angle);
+    // Forward corridor for JetTank chassis (width 0.22m -> |y| <= 0.12m, front bumper at x = 0.13m)
+    if (x > 0.10 && std::abs(y) <= 0.12) {
+      const double gap_from_bumper = x - 0.13;
+      if (gap_from_bumper < closest) {
+        closest = gap_from_bumper;
+      }
+    }
   }
   return closest;
 }
