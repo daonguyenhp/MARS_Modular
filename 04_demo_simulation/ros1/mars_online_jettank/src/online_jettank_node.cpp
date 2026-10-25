@@ -19,8 +19,8 @@
 
 #include "laser_geometry.hpp"
 #include "mars/graph_bundle_management/graph_bundle_manager.hpp"
-#include "mars/navigation_decision/navigator.hpp"
-#include "mars/perception_geometry/perception.hpp"
+#include "mars/perception_geometry/perception_pipeline.hpp"
+#include "navigator.hpp"
 #include "path_follower.hpp"
 
 namespace mars::online_jettank {
@@ -73,27 +73,25 @@ class OnlineJetTankNode {
   explicit OnlineJetTankNode(ros::NodeHandle& nh, ros::NodeHandle& pnh)
       : nh_(nh), pnh_(pnh) {
     pnh_.param("vision_radius", config_.vision_radius, 1.6);
-    pnh_.param("max_step", config_.max_step, 2.0);
-    pnh_.param("arrival_tolerance", config_.arrival_tolerance, 0.20);
-    pnh_.param("goal_tolerance", config_.goal_tolerance, 0.25);
+    pnh_.param("max_step", config_.max_step, 0.70);
+    pnh_.param("arrival_tolerance", config_.arrival_tolerance, 0.15);
+    pnh_.param("goal_tolerance", config_.goal_tolerance, 0.15);
     pnh_.param("linear_epsilon", config_.linear_epsilon, 0.03);
-    pnh_.param("angular_epsilon", config_.angular_epsilon, 0.03);
     pnh_.param("goal_x", goal_.x, 8.6);
     pnh_.param("goal_y", goal_.y, 6.8);
 
     mars::graph_bundle_management::GraphBundleConfig bundle_cfg;
     bundle_cfg.linear_epsilon = config_.linear_epsilon;
-    bundle_cfg.angular_epsilon = config_.angular_epsilon;
     bundle_cfg.visited_radius = config_.arrival_tolerance;
     bundle_cfg.gate_contract_enabled = true;
     manager_ = std::make_unique<GraphBundleManager>(bundle_cfg);
     navigator_ = std::make_unique<Navigator>(config_);
 
     mars::demo_simulation::FollowerConfig follower_cfg;
-    follower_cfg.max_linear_speed = 0.25;  // JetTank safe speed in m/s
-    follower_cfg.max_angular_speed = 0.8; // rad/s
-    follower_cfg.lookahead = 0.25;
-    follower_cfg.arrival_tolerance = config_.arrival_tolerance;
+    follower_cfg.max_linear_speed = 0.22;  // JetTank safe speed in m/s
+    follower_cfg.max_angular_speed = 0.75; // rad/s
+    follower_cfg.waypoint_tolerance = 0.10;
+    follower_cfg.goal_tolerance = 0.10;
     follower_ = std::make_unique<mars::demo_simulation::PathFollower>(follower_cfg);
 
     init_occupancy_grid();
