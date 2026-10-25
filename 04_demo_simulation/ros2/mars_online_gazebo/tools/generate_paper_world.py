@@ -63,7 +63,7 @@ def generate():
                        for x0, y0, x1, y1 in obstacles), f"pose inside wall: {point}"
     walls = "\n".join(wall(f"paper_wall_{i:02d}", polygon)
                       for i, polygon in enumerate(obstacles))
-    template = (HERE.parent / "worlds" / "paper_alley.template.sdf").read_text(
+    template = (HERE.parent / "worlds" / "paper_alley_tb3.template.sdf").read_text(
         encoding="utf-8")
     result = template.replace("<!-- PAPER_WALLS -->", walls)
     result = result.replace("__START_X__", str(start[0]))

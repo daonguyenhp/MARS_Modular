@@ -3,7 +3,10 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -68,6 +71,8 @@ class OnlineNavigationNode : public rclcpp::Node {
   OnlineNavigationNode() : Node("mars_online_navigation") {
     goal_ = {declare_parameter<double>("goal_x", 8.6),
              declare_parameter<double>("goal_y", 6.8)};
+    status_log_path_ = declare_parameter<std::string>(
+        "status_log", "/tmp/mars_online_status.csv");
     config_.vision_radius = 1.6;
     config_.max_step = 0.70;
     config_.arrival_tolerance = 0.15;
@@ -146,6 +151,7 @@ class OnlineNavigationNode : public rclcpp::Node {
     observed_map_.data.assign(200 * 200, -1);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     timer_ = create_wall_timer(50ms, [this] { tick(); });
+    open_status_log();
     RCLCPP_INFO(get_logger(), "Online MARS: waiting for real Gazebo /scan and /odom");
   }
 
@@ -227,6 +233,55 @@ class OnlineNavigationNode : public rclcpp::Node {
         RCLCPP_INFO(get_logger(), "Recovery complete; replanning from fresh scan");
       }
     }
+  }
+
+  const char* recovery_phase_name() const {
+    switch (recovery_phase_) {
+      case RecoveryPhase::Backoff: return "BACKOFF";
+      case RecoveryPhase::Turn: return "TURN";
+      case RecoveryPhase::None: return "NONE";
+    }
+    return "UNKNOWN";
+  }
+
+  void open_status_log() {
+    if (status_log_path_.empty()) return;
+    try {
+      const std::filesystem::path path(status_log_path_);
+      if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
+      status_log_.open(path, std::ios::out | std::ios::trunc);
+      if (!status_log_) {
+        RCLCPP_WARN(get_logger(), "Cannot open status log: %s", status_log_path_.c_str());
+        return;
+      }
+      status_log_ << "wall_ms,ros_ns,event,x,y,yaw,scan_sequence,observation_id,"
+                     "active,recovery_phase,front_clearance,left_clearance,"
+                     "right_clearance,open_points,planned_points,trail_points\n";
+      status_log_.flush();
+      RCLCPP_INFO(get_logger(), "Writing status log to %s", status_log_path_.c_str());
+    } catch (const std::exception& error) {
+      RCLCPP_WARN(get_logger(), "Cannot initialize status log: %s", error.what());
+    }
+  }
+
+  void log_status_if_changed(const rclcpp::Time& stamp) {
+    if (!status_log_.is_open()) return;
+    if (scan_sequence_ == logged_scan_sequence_ && current_event_ == logged_event_)
+      return;
+    const auto wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const double front = mars::online_gazebo::forward_clearance(scan_);
+    const double left = mars::online_gazebo::sector_clearance(scan_, 0.35, 1.45);
+    const double right = mars::online_gazebo::sector_clearance(scan_, -1.45, -0.35);
+    status_log_ << wall_ms << ',' << stamp.nanoseconds() << ',' << current_event_ << ','
+                << pose_.position.x << ',' << pose_.position.y << ',' << pose_.yaw << ','
+                << scan_sequence_ << ',' << observation_id_ << ',' << (active_ ? 1 : 0)
+                << ',' << recovery_phase_name() << ',' << front << ',' << left << ','
+                << right << ',' << last_open_points_ << ',' << planned_.size() << ','
+                << trail_.size() << '\n';
+    status_log_.flush();
+    logged_scan_sequence_ = scan_sequence_;
+    logged_event_ = current_event_;
   }
 
   void tick() {
@@ -386,6 +441,7 @@ class OnlineNavigationNode : public rclcpp::Node {
     auto decision = navigator_->decide(observation);
     if (decision.event == "BAR") decision = navigator_->decide(observation);
     current_event_ = decision.event;
+    last_open_points_ = perception.open_points.size();
     planned_ = decision.planned_path.points;
     RCLCPP_INFO(get_logger(), "scan %zu, walls %zu, open %zu, event %s, path %zu",
                 static_cast<std::size_t>(observation_id_), obstacles.size(),
@@ -415,6 +471,7 @@ class OnlineNavigationNode : public rclcpp::Node {
     std_msgs::msg::String status;
     status.data = current_event_;
     status_pub_->publish(status);
+    log_status_if_changed(stamp);
     if (!have_pose_) return;
     auto path_message = [&](const std::vector<Point2D>& points) {
       nav_msgs::msg::Path path;
@@ -484,9 +541,14 @@ class OnlineNavigationNode : public rclcpp::Node {
   LaserFrame scan_{};
   std::vector<Point2D> entry_path_, trail_, planned_, entry_trace_, return_trace_;
   std::string current_event_;
+  std::string status_log_path_;
+  std::ofstream status_log_;
+  std::string logged_event_;
   std::chrono::steady_clock::time_point scan_received_{}, pose_received_{};
   std::chrono::steady_clock::time_point progress_time_{};
   std::uint64_t scan_sequence_{0}, scan_used_{0}, map_scan_used_{0}, observation_id_{0};
+  std::uint64_t logged_scan_sequence_{0};
+  std::size_t last_open_points_{0};
   bool have_pose_{false}, active_{false}, terminal_{false};
   RecoveryPhase recovery_phase_{RecoveryPhase::None};
   std::chrono::steady_clock::time_point recovery_deadline_{};

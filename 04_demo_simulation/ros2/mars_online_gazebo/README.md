@@ -69,6 +69,18 @@ attempts failed. This is an initial integration for
 Ubuntu runtime verification; it has not yet been exercised against Gazebo
 from the Windows development machine.
 
+For a persistent per-scan trace, pass a CSV path to the node:
+
+```bash
+ros2 run mars_online_gazebo online_navigation_node --ros-args \
+  -p use_sim_time:=true -p goal_x:=8.6 -p goal_y:=6.8 \
+  -p status_log:=/tmp/mars_test_A.csv
+```
+
+The CSV records pose, event, LiDAR clearance in front/left/right, open-point
+count, planned waypoint count, and recovery phase. It is flushed as the run
+continues, so it can be copied after stopping the experiment.
+
 To regenerate the same wall geometry after changing the sketch:
 
 ```bash
