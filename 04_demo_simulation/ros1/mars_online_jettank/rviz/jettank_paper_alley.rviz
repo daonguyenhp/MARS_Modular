@@ -95,6 +95,7 @@ Visualization Manager:
         center_labels: true
         closed_sights: true
         entry_path_marker: true
+        funnel_metric_banner: true
         observation_centers: true
         open_points: true
         open_sights: true
