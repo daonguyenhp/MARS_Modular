@@ -26,4 +26,9 @@ bool target_visible_in_scan(const LaserFrame& scan,
 
 double forward_clearance(const LaserFrame& scan);
 
+// Minimum finite return in an angular sector, expressed in the scan frame.
+// The result is infinity when the sector has no finite return.
+double sector_clearance(const LaserFrame& scan, double min_angle,
+                        double max_angle);
+
 }  // namespace mars::online_gazebo

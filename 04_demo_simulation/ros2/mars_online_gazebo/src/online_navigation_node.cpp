@@ -54,6 +54,13 @@ Marker marker(const std::string& ns, int id, int type, const rclcpp::Time& stamp
   out.scale.x = 0.025; out.scale.y = 0.025; out.scale.z = 0.025;
   return out;
 }
+
+double wrap_angle(double angle) {
+  constexpr double pi = 3.14159265358979323846;
+  while (angle > pi) angle -= 2.0 * pi;
+  while (angle < -pi) angle += 2.0 * pi;
+  return angle;
+}
 }  // namespace
 
 class OnlineNavigationNode : public rclcpp::Node {
@@ -150,6 +157,8 @@ class OnlineNavigationNode : public rclcpp::Node {
     navigator_ = std::make_unique<Navigator>(config_);
     observation_id_ = 0;
     scan_used_ = 0;
+    recovery_phase_ = RecoveryPhase::None;
+    recovery_attempts_ = 0;
     current_event_ = "WAIT_SENSORS";
   }
 
@@ -160,6 +169,65 @@ class OnlineNavigationNode : public rclcpp::Node {
   }
 
   void stop() { cmd_pub_->publish(geometry_msgs::msg::Twist{}); }
+
+  enum class RecoveryPhase { None, Backoff, Turn };
+
+  void begin_recovery() {
+    ++recovery_attempts_;
+    if (recovery_attempts_ > 5) {
+      stop();
+      terminal_ = true;
+      active_ = false;
+      current_event_ = "SAFETY_BLOCKED";
+      RCLCPP_ERROR(get_logger(),
+                   "Repeated obstacle recovery failed; stopping safely");
+      return;
+    }
+
+    const double left = mars::online_gazebo::sector_clearance(scan_, 0.35, 1.45);
+    const double right = mars::online_gazebo::sector_clearance(scan_, -1.45, -0.35);
+    // Turn toward the side with more measured free space. If both sectors are
+    // unknown, prefer left so the recovery is deterministic.
+    turn_sign_ = left >= right ? 1.0 : -1.0;
+    recovery_phase_ = RecoveryPhase::Backoff;
+    recovery_deadline_ = std::chrono::steady_clock::now() + 700ms;
+    active_ = false;
+    current_event_ = "RECOVERY_BACKOFF";
+    stop();
+    RCLCPP_WARN(get_logger(),
+                "Obstacle at %.2f m; backing up and turning %s (left %.2f, right %.2f)",
+                mars::online_gazebo::forward_clearance(scan_),
+                turn_sign_ > 0.0 ? "left" : "right", left, right);
+  }
+
+  void run_recovery() {
+    const auto now = std::chrono::steady_clock::now();
+    geometry_msgs::msg::Twist command;
+    if (recovery_phase_ == RecoveryPhase::Backoff) {
+      command.linear.x = -0.08;
+      cmd_pub_->publish(command);
+      if (now >= recovery_deadline_) {
+        recovery_phase_ = RecoveryPhase::Turn;
+        recovery_deadline_ = now + 2500ms;
+        recovery_target_yaw_ = wrap_angle(pose_.yaw + turn_sign_ * 0.95);
+        current_event_ = "RECOVERY_TURN";
+      }
+      return;
+    }
+
+    if (recovery_phase_ == RecoveryPhase::Turn) {
+      const double error = wrap_angle(recovery_target_yaw_ - pose_.yaw);
+      command.angular.z = turn_sign_ * 0.55;
+      cmd_pub_->publish(command);
+      if (std::abs(error) < 0.12 || now >= recovery_deadline_) {
+        stop();
+        recovery_phase_ = RecoveryPhase::None;
+        scan_used_ = scan_sequence_;  // wait for a fresh view after turning
+        current_event_ = "REPLAN";
+        RCLCPP_INFO(get_logger(), "Recovery complete; replanning from fresh scan");
+      }
+    }
+  }
 
   void tick() {
     if (!sensors_fresh()) {
@@ -172,6 +240,11 @@ class OnlineNavigationNode : public rclcpp::Node {
     if (scan_sequence_ > map_scan_used_) {
       update_observed_map();
       map_scan_used_ = scan_sequence_;
+    }
+    if (recovery_phase_ != RecoveryPhase::None) {
+      run_recovery();
+      publish_visuals();
+      return;
     }
     if (active_) {
       const auto command = follower_->compute(pose_);
@@ -199,12 +272,11 @@ class OnlineNavigationNode : public rclcpp::Node {
         geometry_msgs::msg::Twist twist;
         // Robot radius 0.14 m. Front obstacle below 0.23 m => stop safely.
         if (command.linear_x > 0 && mars::online_gazebo::forward_clearance(scan_) < 0.23) {
-          stop();
-          active_ = false;
-          current_event_ = ++safety_stops_ >= 3 ? "SAFETY_BLOCKED" : "SAFETY_STOP";
-          if (safety_stops_ >= 3) terminal_ = true;
+          begin_recovery();
         } else {
-          if (command.linear_x > 0) safety_stops_ = 0;
+          if (command.linear_x > 0) {
+            recovery_attempts_ = 0;
+          }
           twist.linear.x = command.linear_x;
           twist.angular.z = command.angular_z;
           cmd_pub_->publish(twist);
@@ -416,7 +488,11 @@ class OnlineNavigationNode : public rclcpp::Node {
   std::chrono::steady_clock::time_point progress_time_{};
   std::uint64_t scan_sequence_{0}, scan_used_{0}, map_scan_used_{0}, observation_id_{0};
   bool have_pose_{false}, active_{false}, terminal_{false};
-  int safety_stops_{0};
+  RecoveryPhase recovery_phase_{RecoveryPhase::None};
+  std::chrono::steady_clock::time_point recovery_deadline_{};
+  double recovery_target_yaw_{0.0};
+  double turn_sign_{1.0};
+  int recovery_attempts_{0};
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;

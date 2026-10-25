@@ -7,18 +7,22 @@ sketch unit. Python is used only by `tools/generate_paper_world.py` to extract
 those literal wall coordinates and generate the SDF. The planner does not read
 the SDF, occupancy grid, original sketch path, or a precomputed entry/exit.
 
-Gazebo runs a 3D differential-drive robot with collision geometry and a 360°,
-1.6 m LiDAR. Gazebo publishes `/scan` and `/odom`; `ros_gz_bridge` passes them
+Gazebo spawns the official TurtleBot3 Burger model with collision geometry and
+its LiDAR/differential-drive plugins. Gazebo publishes `/scan` and `/odom`; `ros_gz_bridge` passes them
 to ROS 2. The ROS node converts each *current* LaserScan into visible wall
 segments, calls the repository's Module 1 perception, Module 2 graph/bundle
 manager, and Module 3 navigator, then follows only the next selected path with
-`/cmd_vel`. After driving that path it scans and decides again. RViz shows a
+`/cmd_vel`. After driving that path it scans and decides again. A low-level
+safety recovery is enabled: when the forward LiDAR sector is too close, the
+controller backs up, turns toward the more open side, waits for a fresh scan,
+and replans. BAR/DAP/Funnel remains the MARS decision logic. RViz shows a
 LiDAR-built occupancy grid for inspection, not for planning.
 
 ## Ubuntu run
 
 Prerequisites: ROS 2 Lyrical, Gazebo Jetty, `ros_gz_sim`, `ros_gz_bridge`, RViz 2,
-and `colcon`. In the workspace containing this repository:
+the ROS 2 `turtlebot3_gazebo` package, and `colcon`. In the workspace containing
+this repository:
 
 ```bash
 cd ~/hcmut/ros2_ws/mars_ws/src/MARS_Modular
@@ -58,8 +62,10 @@ You should see live LiDAR, changing odometry, changing motion commands, and
 RViz shows scan, growing observed map, the pose marker, paper vision circle,
 Module 2 bundle rays, separate orange entry / blue return tracks, and current
 plan. `WAIT_SENSORS`,
-`FUNNEL_FAIL`, `FRONTIER_EXHAUSTED`, `SAFETY_STOP`, and `MOTION_STALLED` are diagnostic
-states, not successful escape claims. This is an initial integration for
+`FUNNEL_FAIL`, `FRONTIER_EXHAUSTED`, `SAFETY_STOP`, `RECOVERY_BACKOFF`,
+`RECOVERY_TURN`, `REPLAN`, `SAFETY_BLOCKED`, and `MOTION_STALLED` are diagnostic
+states, not successful escape claims. `SAFETY_BLOCKED` means five recovery
+attempts failed. This is an initial integration for
 Ubuntu runtime verification; it has not yet been exercised against Gazebo
 from the Windows development machine.
 

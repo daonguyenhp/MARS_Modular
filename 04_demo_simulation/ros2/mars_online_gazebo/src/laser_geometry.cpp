@@ -93,12 +93,19 @@ bool target_visible_in_scan(const LaserFrame& scan,
 }
 
 double forward_clearance(const LaserFrame& scan) {
+  return sector_clearance(scan, -0.30, 0.30);
+}
+
+double sector_clearance(const LaserFrame& scan, double min_angle,
+                        double max_angle) {
+  if (max_angle < min_angle) std::swap(min_angle, max_angle);
   double closest = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < scan.ranges.size(); ++i) {
     const double angle = scan.angle_min + static_cast<double>(i) * scan.angle_increment;
-    if (std::abs(angle) > 0.30) continue;
+    if (angle < min_angle || angle > max_angle) continue;
     const double r = static_cast<double>(scan.ranges[i]);
-    if (std::isfinite(r)) closest = std::min(closest, r);
+    if (std::isfinite(r) && r >= scan.range_min)
+      closest = std::min(closest, r);
   }
   return closest;
 }
