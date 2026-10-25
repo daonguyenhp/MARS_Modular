@@ -9,3 +9,4 @@ compile_commands.json.bak
 04_demo_simulation/output/fig8b_graph.svg
 04_demo_simulation/output/fig9b_bundles.svg
 04_demo_simulation/output/fig9c_exit.svg
+04_demo_simulation/include/mode1_maps.hpp

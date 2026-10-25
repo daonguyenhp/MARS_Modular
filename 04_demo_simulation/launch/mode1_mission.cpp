@@ -247,6 +247,9 @@ MissionResult run_mode1_mission(const Mode1Scenario& scenario,
   }
   mars::graph_bundle_management::GraphBundleConfig bundle_config;
   bundle_config.gate_contract_enabled = true;
+  if (limits.arrival_tolerance > 0.0) {
+    bundle_config.visited_radius = limits.arrival_tolerance;
+  }
   mars::graph_bundle_management::GraphBundleManager manager(bundle_config);
   mars::navigation_decision::Navigator navigator(config);
   FakeOdom odom{{scenario.start, 0.0}};
@@ -348,7 +351,6 @@ MissionResult run_mode1_mission(const Mode1Scenario& scenario,
         observation.routes.end());
     if (observation.routes.empty()) {
       observation.ranked.clear();
-      observation.escape_candidates.clear();
     }
     if (const auto portals = manager.return_gates(); portals.success) {
       observation.gates = portals.gates;

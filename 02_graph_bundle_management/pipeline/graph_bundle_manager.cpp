@@ -136,6 +136,23 @@ UpdateSummary GraphBundleManager::update(const GraphBundleUpdate& input) {
                                         config_.visited_radius,
                                         OpenPointStatus::Reached);
 
+  for (const auto open_point_id : observed_ids) {
+    const auto* record = open_point_memory_.find(open_point_id);
+    if (record == nullptr || record->status != OpenPointStatus::Active) {
+      continue;
+    }
+    // Paper Section 4.3: "If p in S_t^e, p is inactive point, then the robot ignores them."
+    // S_t^e is the union of explored sights up to t-1.
+    for (const auto& [prev_id, prev_sight] : sightings_) {
+      const double margin = std::max(0.02 * prev_sight.radius, config_.linear_epsilon * 10.0);
+      if (internal::distance(prev_sight.center, record->point) < prev_sight.radius - margin &&
+          neighbor_sight_supports_point(prev_sight, record->point, config_.linear_epsilon)) {
+        open_point_memory_.mark_explored(open_point_id);
+        break;
+      }
+    }
+  }
+
   const auto center_node_id = visibility_graph_.add_or_merge_node(
       input.current_pose.position, VisibilityNodeKind::ObservationCenter,
       input.observation_id, std::nullopt, config_.linear_epsilon);

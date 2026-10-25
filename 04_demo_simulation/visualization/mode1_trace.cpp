@@ -314,6 +314,15 @@ void write_algorithm_panels(const std::string& directory, const LoadedMap& map,
   if (mission.return_trail_index < entry_end) {
     entry_end = mission.return_trail_index;
   }
+  std::size_t return_end = mission.trail.size();
+  for (std::size_t i = 0; i < mission.frames.size(); ++i) {
+    if (mission.frames[i].event == "FUNNEL") {
+      if (i + 1 < mission.frames.size()) {
+        return_end = std::min(mission.frames[i + 1].trail_index + 1, mission.trail.size());
+      }
+      break;
+    }
+  }
   auto slash = directory;
   if (!slash.empty() && slash.back() != '/' && slash.back() != '\\') {
     slash += '/';
@@ -479,9 +488,21 @@ void write_algorithm_panels(const std::string& directory, const LoadedMap& map,
       write_trail(0, entry_end, "#ffffff", nullptr, "7");
       write_trail(0, entry_end, "#222222", "9 6", "2.8");
       const std::size_t return_begin = entry_end > 0 ? entry_end - 1 : entry_end;
-      if (mission.return_length > 0.0 && mission.trail.size() > return_begin) {
-        write_trail(return_begin, mission.trail.size(), "#ffffff", nullptr, "11");
-        write_trail(return_begin, mission.trail.size(), "#e10600", nullptr, "6");
+      double alley_entry_len = 0.0;
+      for (std::size_t i = 1; i < entry_end; ++i) {
+        alley_entry_len += std::hypot(mission.trail[i].x - mission.trail[i - 1].x,
+                                      mission.trail[i].y - mission.trail[i - 1].y);
+      }
+      double alley_exit_len = 0.0;
+      if (return_end > return_begin) {
+        for (std::size_t i = return_begin + 1; i < return_end; ++i) {
+          alley_exit_len += std::hypot(mission.trail[i].x - mission.trail[i - 1].x,
+                                       mission.trail[i].y - mission.trail[i - 1].y);
+        }
+      }
+      if (alley_exit_len > 0.0 && return_end > return_begin) {
+        write_trail(return_begin, return_end, "#ffffff", nullptr, "11");
+        write_trail(return_begin, return_end, "#e10600", nullptr, "6");
       } else if (focus != nullptr && focus->funnel.size() >= 2) {
         auto write_funnel = [&](const char* color, const char* stroke) {
           out << "<polyline fill=\"none\" stroke=\"" << color << "\" stroke-width=\""
@@ -496,9 +517,9 @@ void write_algorithm_panels(const std::string& directory, const LoadedMap& map,
       }
       out << "<text x=\"" << sx(8) << "\" y=\"" << sy(12)
           << "\" font-family=\"sans-serif\" font-size=\"14\" fill=\"#111\">"
-          << "L vao " << mission.entry_length;
-      if (mission.return_length > 0.0) {
-        out << "   L ra " << mission.return_length;
+          << "L vao " << alley_entry_len;
+      if (alley_exit_len > 0.0) {
+        out << "   L ra " << alley_exit_len;
       }
       out << "</text>\n";
     }

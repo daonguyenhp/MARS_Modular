@@ -5,11 +5,24 @@
 
 #include "internal/geometry.hpp"
 
+// Encapsulate the code within a separate space
 namespace mars::navigation_decision {
 
 bool is_blind_alley(ExploreKind kind) noexcept {
-  return kind == ExploreKind::BlindAlley;
+    return kind == ExploreKind::BlindAlley;
 }
+
+
+/**
+    * @brief Plans an escape from a blind alley.
+    * 
+    * @param pose The current pose of the robot.
+    * @param candidates The candidates for escape.
+    * @param entry_pose The pose of the entry point.
+    * @param config The navigation configuration.
+    * @return The escape plan.
+*/
+
 
 EscapePlan plan_escape(const Point2D& pose,
                        const std::vector<EscapeCandidate>& candidates,
@@ -19,6 +32,23 @@ EscapePlan plan_escape(const Point2D& pose,
   internal::require_finite(pose, "pose");
   internal::require_finite(entry_pose, "entry_pose");
 
+  // Paper Section 1 & Section 4.6 (BAR Problem Definition):
+  // (BAR) The robot is in a blind alley region, that is bounded by obstacles and
+  // it provides no possible passage for robots except in and out of its path entry,
+  // then the robot has to return to some position outside the region (entry_pose)
+  // such that the returned path is not longer than the path entry.
+  if (internal::distance(pose, entry_pose) > config.arrival_tolerance) {
+    EscapePlan plan;
+    plan.kind = EscapeKind::Retreat;
+    plan.reason = "BAR: return to path entry outside region";
+    plan.target = entry_pose;
+    std::ostringstream log;
+    log << "BAR: return to entry [" << entry_pose.x << ", " << entry_pose.y << "]";
+    plan.log = log.str();
+    return plan;
+  }
+
+  // Already at entry pose: choose best candidate open point outside the alley
   std::vector<EscapeCandidate> remaining = candidates;
   std::sort(remaining.begin(), remaining.end(),
             [](const EscapeCandidate& first, const EscapeCandidate& second) {
@@ -32,34 +62,19 @@ EscapePlan plan_escape(const Point2D& pose,
   for (const auto& candidate : remaining) {
     internal::require_finite(candidate.point, "escape candidate");
     internal::require_finite(candidate.owner_pose, "owner pose");
-    if (internal::distance(pose, candidate.owner_pose) >
-        config.arrival_tolerance) {
+    if (internal::distance(pose, candidate.point) > config.arrival_tolerance) {
       EscapePlan plan;
       plan.kind = EscapeKind::Retreat;
-      plan.reason = "DEADEND: return to owner of open point";
-      plan.target = candidate.owner_pose;
+      plan.reason = "BAR: explore candidate outside alley";
+      plan.target = candidate.point;
       plan.retired_id = last_retired;
       std::ostringstream log;
-      log << "BAR: return to c[" << candidate.owner_pose.x << ", "
-          << candidate.owner_pose.y << "] (owner of open pt ["
-          << candidate.point.x << ", " << candidate.point.y << "])";
+      log << "BAR: target open point [" << candidate.point.x << ", "
+          << candidate.point.y << "] outside alley";
       plan.log = log.str();
       return plan;
     }
     last_retired = candidate.id;
-  }
-
-  if (internal::distance(pose, entry_pose) > config.arrival_tolerance) {
-    EscapePlan plan;
-    plan.kind = EscapeKind::Retreat;
-    plan.reason = "FRONTIER_EXHAUSTED: retreat to entry";
-    plan.target = entry_pose;
-    plan.retired_id = last_retired;
-    std::ostringstream log;
-    log << "BAR: retreat to entry [" << entry_pose.x << ", " << entry_pose.y
-        << "]";
-    plan.log = log.str();
-    return plan;
   }
 
   EscapePlan plan;
