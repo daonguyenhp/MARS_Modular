@@ -306,7 +306,6 @@ class OnlineNavigationNode : public rclcpp::Node {
       }), observation.routes.end());
     if (observation.routes.empty()) {
       observation.ranked.clear();
-      observation.escape_candidates.clear();
     }
     if (const auto gates = manager_->return_gates(); gates.success)
       observation.gates = gates.gates;
