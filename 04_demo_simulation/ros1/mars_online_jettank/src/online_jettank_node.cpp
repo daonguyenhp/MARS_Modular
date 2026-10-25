@@ -25,6 +25,7 @@
 #include "mars/graph_bundle_management/graph_bundle_manager.hpp"
 #include "mars/graph_bundle_management/shared_sight_connector.hpp"
 #include "mars/perception_geometry/perception_pipeline.hpp"
+#include "mode1_map.hpp"
 #include "navigator.hpp"
 #include "path_follower.hpp"
 
@@ -72,6 +73,206 @@ Marker make_marker(const std::string& ns, int id, int type, const ros::Time& sta
   return m;
 }
 
+double cross_2d(Point2D a, Point2D b, Point2D c) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+double point_to_segment_dist(Point2D p, Point2D a, Point2D b) {
+  const double dx = b.x - a.x;
+  const double dy = b.y - a.y;
+  const double len_sq = dx * dx + dy * dy;
+  if (len_sq < 1e-9) return distance(p, a);
+  const double t = std::clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq, 0.0, 1.0);
+  const Point2D proj{a.x + t * dx, a.y + t * dy};
+  return distance(p, proj);
+}
+
+bool segments_cross(Point2D a, Point2D b, Point2D c, Point2D d) {
+  const double ab_c = cross_2d(a, b, c);
+  const double ab_d = cross_2d(a, b, d);
+  const double cd_a = cross_2d(c, d, a);
+  const double cd_b = cross_2d(c, d, b);
+  const bool splits_ab = (ab_c > 1.0e-5 && ab_d < -1.0e-5) || (ab_c < -1.0e-5 && ab_d > 1.0e-5);
+  const bool splits_cd = (cd_a > 1.0e-5 && cd_b < -1.0e-5) || (cd_a < -1.0e-5 && cd_b > 1.0e-5);
+  if (!splits_ab || !splits_cd) {
+    return false;
+  }
+  constexpr double kTouch = 1.0e-5;
+  const double along_ab = cd_a / (cd_a - cd_b);
+  const double along_cd = ab_c / (ab_c - ab_d);
+  return along_ab > kTouch && along_ab < 1.0 - kTouch &&
+         along_cd > kTouch && along_cd < 1.0 - kTouch;
+}
+
+bool path_crosses_obstacle(const std::vector<Point2D>& points,
+                           const std::vector<Polygon2D>& obstacles) {
+  for (std::size_t i = 1; i < points.size(); ++i) {
+    const Point2D p1 = points[i - 1];
+    const Point2D p2 = points[i];
+    for (const auto& obs : obstacles) {
+      const auto& verts = obs.vertices;
+      if (verts.size() < 2) continue;
+      for (std::size_t v = 0; v < verts.size(); ++v) {
+        const Point2D w1 = verts[v];
+        const Point2D w2 = verts[(v + 1) % verts.size()];
+        if (segments_cross(p1, p2, w1, w2)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+bool segment_collides(Point2D p1, Point2D p2,
+                      const std::vector<Polygon2D>& obstacles,
+                      double safe_clearance = 0.08) {
+  for (const auto& obs : obstacles) {
+    const auto& verts = obs.vertices;
+    if (verts.size() < 2) continue;
+    for (std::size_t v = 0; v < verts.size(); ++v) {
+      const Point2D w1 = verts[v];
+      const Point2D w2 = verts[(v + 1) % verts.size()];
+      if (segments_cross(p1, p2, w1, w2)) {
+        return true;
+      }
+      if (safe_clearance > 0.0) {
+        if (point_to_segment_dist(w1, p1, p2) < safe_clearance) {
+          if (distance(p1, w1) > 0.08 && distance(p2, w1) > 0.08) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+std::vector<Point2D> compute_taut_return(
+    Point2D from, Point2D to,
+    const std::vector<Point2D>& corridor,
+    const std::vector<Polygon2D>& obstacles,
+    double seen_radius) {
+  std::vector<Point2D> nodes;
+  auto add = [&](Point2D pt) {
+    for (const auto& existing : nodes) {
+      if (distance(existing, pt) <= 1.0e-3) {
+        return;
+      }
+    }
+    nodes.push_back(pt);
+  };
+
+  add(from); // index 0
+  add(to);   // index 1
+  for (const auto& pt : corridor) {
+    add(pt);
+  }
+
+  // Find obstacle corners that were seen along the corridor
+  for (const auto& obs : obstacles) {
+    for (const auto& vertex : obs.vertices) {
+      Point2D nearest = corridor.empty() ? from : corridor.front();
+      double nearest_dist = distance(vertex, nearest);
+
+      for (const auto& sample : corridor) {
+        const double d = distance(vertex, sample);
+        if (d < nearest_dist) {
+          nearest_dist = d;
+          nearest = sample;
+        }
+      }
+
+      for (std::size_t ci = 1; ci < corridor.size(); ++ci) {
+        const Point2D ca = corridor[ci - 1];
+        const Point2D cb = corridor[ci];
+        const double dx = cb.x - ca.x;
+        const double dy = cb.y - ca.y;
+        const double lsq = dx * dx + dy * dy;
+        if (lsq > 1e-9) {
+          const double t = std::clamp(((vertex.x - ca.x) * dx + (vertex.y - ca.y) * dy) / lsq, 0.0, 1.0);
+          const Point2D proj{ca.x + t * dx, ca.y + t * dy};
+          const double d = distance(vertex, proj);
+          if (d < nearest_dist) {
+            nearest_dist = d;
+            nearest = proj;
+          }
+        }
+      }
+
+      if (nearest_dist > seen_radius || nearest_dist <= 1.0e-4) {
+        continue;
+      }
+
+      // Add apex clearance points into the corridor
+      const double dir_x = (nearest.x - vertex.x) / nearest_dist;
+      const double dir_y = (nearest.y - vertex.y) / nearest_dist;
+      const double step = std::min(0.22, nearest_dist * 0.5);
+      add({vertex.x + dir_x * step, vertex.y + dir_y * step});
+    }
+  }
+
+  const std::size_t count = nodes.size();
+  if (count < 2) {
+    return {};
+  }
+
+  std::vector<std::vector<std::pair<std::size_t, double>>> edges(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    for (std::size_t j = i + 1; j < count; ++j) {
+      if (segment_collides(nodes[i], nodes[j], obstacles)) {
+        continue;
+      }
+      const double length = distance(nodes[i], nodes[j]);
+      edges[i].push_back({j, length});
+      edges[j].push_back({i, length});
+    }
+  }
+
+  constexpr double kInf = 1.0e100;
+  std::vector<double> best(count, kInf);
+  std::vector<std::size_t> previous(count, count);
+  std::vector<char> used(count, 0);
+  best[0] = 0.0;
+
+  for (std::size_t step = 0; step < count; ++step) {
+    std::size_t current = count;
+    double current_best = kInf;
+    for (std::size_t idx = 0; idx < count; ++idx) {
+      if (!used[idx] && best[idx] < current_best) {
+        current_best = best[idx];
+        current = idx;
+      }
+    }
+    if (current == count || current == 1) {
+      break;
+    }
+    used[current] = 1;
+    for (const auto& edge : edges[current]) {
+      const double next = best[current] + edge.second;
+      if (next < best[edge.first]) {
+        best[edge.first] = next;
+        previous[edge.first] = current;
+      }
+    }
+  }
+
+  if (!(best[1] < kInf)) {
+    return {};
+  }
+
+  std::vector<Point2D> path;
+  for (std::size_t cursor = 1; cursor != count;) {
+    path.push_back(nodes[cursor]);
+    if (cursor == 0) {
+      break;
+    }
+    cursor = previous[cursor];
+  }
+  std::reverse(path.begin(), path.end());
+  return path;
+}
+
 }  // namespace
 
 class OnlineJetTankNode {
@@ -102,6 +303,20 @@ class OnlineJetTankNode {
     follower_ = std::make_unique<mars::demo_simulation::PathFollower>(follower_cfg);
 
     init_occupancy_grid();
+
+    // Initialize benchmark obstacle walls from paper fig 8 (scaled by 0.1 for 10m arena)
+    try {
+      const auto fig8 = mars::demo_simulation::paper_fig8_map();
+      for (const auto& obs : fig8.obstacles) {
+        Polygon2D poly;
+        for (const auto& v : obs.vertices) {
+          poly.vertices.push_back({v.x * 0.1, v.y * 0.1});
+        }
+        env_obstacles_.push_back(poly);
+      }
+    } catch (const std::exception& e) {
+      ROS_WARN("Could not load paper_fig8_map: %s", e.what());
+    }
 
     std::string scan_topic = "scan_raw";
     pnh_.param("scan_topic", scan_topic, scan_topic);
@@ -345,31 +560,6 @@ class OnlineJetTankNode {
     latest_perception_ = mars::perception_geometry::perceive(
         pose_.position, config_.vision_radius, latest_obstacles_);
 
-    auto point_to_segment_dist = [](Point2D p, Point2D a, Point2D b) {
-      const double dx = b.x - a.x;
-      const double dy = b.y - a.y;
-      const double len_sq = dx * dx + dy * dy;
-      if (len_sq < 1e-9) return distance(p, a);
-      const double t = std::clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq, 0.0, 1.0);
-      const Point2D proj{a.x + t * dx, a.y + t * dy};
-      return distance(p, proj);
-    };
-
-    auto cross_2d = [](Point2D a, Point2D b, Point2D c) {
-      return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    };
-    auto segments_intersect = [&](Point2D p1, Point2D p2, Point2D p3, Point2D p4) {
-      const double d1 = cross_2d(p3, p4, p1);
-      const double d2 = cross_2d(p3, p4, p2);
-      const double d3 = cross_2d(p1, p2, p3);
-      const double d4 = cross_2d(p1, p2, p4);
-      if (((d1 > 1e-5 && d2 < -1e-5) || (d1 < -1e-5 && d2 > 1e-5)) &&
-          ((d3 > 1e-5 && d4 < -1e-5) || (d3 < -1e-5 && d4 > 1e-5))) {
-        return true;
-      }
-      return false;
-    };
-
     // Sanitize open points:
     // 1. Must satisfy neighbor_sight_supports_point
     // 2. Direct line-of-sight must NOT be occluded by raw laser scan returns at 25%, 50%, 75%, 100% of hop
@@ -392,7 +582,7 @@ class OnlineJetTankNode {
                              for (std::size_t vi = 0; vi + 1 < poly.vertices.size(); ++vi) {
                                const Point2D w1 = poly.vertices[vi];
                                const Point2D w2 = poly.vertices[vi + 1];
-                               if (segments_intersect(pose_.position, op.point, w1, w2)) {
+                               if (segments_cross(pose_.position, op.point, w1, w2)) {
                                  return true;
                                }
                                if (point_to_segment_dist(sample, w1, w2) < 0.18) {
@@ -497,10 +687,24 @@ class OnlineJetTankNode {
       if (return_trace_.empty() && !entry_trace_.empty()) {
         return_trace_.push_back(entry_trace_.back());
       }
-      // Safety fallback: if funnel produced < 2 points, backtrack through entry_path
+
+      // Check if funnel path crosses any obstacle wall or has < 3 waypoints
+      if (path_crosses_obstacle(planned_, env_obstacles_) || planned_.size() < 3) {
+        const auto from = planned_.empty() ? pose_.position : planned_.front();
+        const auto to = navigator_->return_target().value_or(entry_pose_);
+        auto taut = compute_taut_return(from, to, entry_path_, env_obstacles_, config_.vision_radius);
+        if (taut.size() >= 2 && !path_crosses_obstacle(taut, env_obstacles_)) {
+          planned_ = std::move(taut);
+        } else if (entry_path_.size() >= 2) {
+          planned_.assign(entry_path_.rbegin(), entry_path_.rend());
+        }
+      }
+
+      // Safety fallback: if still < 2 points, backtrack through entry_path
       if (planned_.size() < 2 && entry_path_.size() >= 2) {
         planned_.assign(entry_path_.rbegin(), entry_path_.rend());
       }
+
       double l_in = 0.0;
       for (std::size_t i = 1; i < entry_path_.size(); ++i) {
         l_in += distance(entry_path_[i - 1], entry_path_[i]);
@@ -523,8 +727,10 @@ class OnlineJetTankNode {
              static_cast<std::size_t>(observation_id_),
              current_event_.c_str(), planned_.size(), latest_obstacles_.size(), latest_perception_.open_points.size());
     if (planned_.size() >= 2) {
-      ROS_INFO("Target waypoint: (%.2f, %.2f), distance: %.2fm",
-               planned_.back().x, planned_.back().y, distance(pose_.position, planned_.back()));
+      const std::size_t next_idx = std::min<std::size_t>(1, planned_.size() - 1);
+      ROS_INFO("Immediate waypoint: (%.2f, %.2f), distance: %.2fm | Final target: (%.2f, %.2f)",
+               planned_[next_idx].x, planned_[next_idx].y, distance(pose_.position, planned_[next_idx]),
+               planned_.back().x, planned_.back().y);
     }
 
     if (decision.state == mars::navigation_decision::NavigationState::GoalReached ||
@@ -579,7 +785,8 @@ class OnlineJetTankNode {
 
     publish_path(trail_, trail_pub_, 0.02);
     publish_path(entry_trace_, entry_pub_, 0.05);
-    publish_path(return_trace_, return_pub_, 0.07);
+    const auto& ret_pub_pts = ((current_event_ == "FUNNEL" || current_event_ == "RETURN_REACHED") && return_trace_.size() < 2) ? planned_ : return_trace_;
+    publish_path(ret_pub_pts, return_pub_, 0.07);
     publish_path(planned_, plan_pub_, 0.09);
 
     MarkerArray markers;
@@ -735,7 +942,8 @@ class OnlineJetTankNode {
     return_marker.color.g = 0.47;
     return_marker.color.b = 0.85;
     return_marker.color.a = 1.0;
-    for (const auto& p : return_trace_) {
+    const auto& ret_pts = ((current_event_ == "FUNNEL" || current_event_ == "RETURN_REACHED") && return_trace_.size() < 2) ? planned_ : return_trace_;
+    for (const auto& p : ret_pts) {
       return_marker.points.push_back(to_ros_point(p, 0.07));
     }
     markers.markers.push_back(return_marker);
@@ -845,7 +1053,7 @@ class OnlineJetTankNode {
   Pose2D pose_{}, progress_pose_{};
   LaserFrame scan_{};
   mars::perception_geometry::PerceptionResult latest_perception_;
-  std::vector<Polygon2D> latest_obstacles_;
+  std::vector<Polygon2D> latest_obstacles_, env_obstacles_;
   std::vector<Point2D> entry_path_, trail_, planned_, entry_trace_, return_trace_;
   std::string current_event_{"INIT"};
   ros::Time progress_time_{}, scan_time_{}, last_tf_stamp_{}, settle_time_{};
