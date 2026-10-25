@@ -56,7 +56,7 @@ Visualization Manager:
       Axis: Z
       Channel Name: intensity
       Class: rviz/LaserScan
-      Color: 255; 255; 255
+      Color: 0; 255; 200
       Color Transformer: FlatColor
       Decay Time: 0
       Enabled: true
@@ -69,7 +69,7 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.045
+      Size (m): 0.055
       Style: Flat Squares
       Topic: /scan_raw
       Unreliable: false
@@ -91,25 +91,36 @@ Visualization Manager:
       Marker Topic: /mars_online/markers
       Name: MARS Bundles & Targets
       Namespaces:
-        {}
+        active_waypoint: true
+        center_labels: true
+        closed_sights: true
+        entry_path_marker: true
+        observation_centers: true
+        open_points: true
+        open_sights: true
+        perceived_walls: true
+        ray_bundles: true
+        return_path_marker: true
+        target: true
+        vision_boundary: true
       Queue Size: 100
       Value: true
-    - Alpha: 1
+    - Alpha: 0.4
       Buffer Length: 1
       Class: rviz/Path
-      Color: 255; 170; 30
+      Color: 180; 180; 180
       Enabled: true
       Head Diameter: 0.3
       Head Length: 0.2
       Length: 0.3
       Line Style: Lines
-      Line Width: 0.05
-      Name: Driven Trail
+      Line Width: 0.02
+      Name: Driven Trail (All)
       Offset:
         X: 0
         Y: 0
         Z: 0.02
-      Pose Color: 255; 85; 0
+      Pose Color: 180; 180; 180
       Pose Style: None
       Radius: 0.03
       Shaft Diameter: 0.1
@@ -120,15 +131,15 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
-      Color: 255; 80; 30
+      Color: 255; 65; 20
       Enabled: true
       Line Style: Lines
-      Line Width: 0.06
-      Name: Alley Entry Path
+      Line Width: 0.08
+      Name: Alley Entry Path (Đường đi vào)
       Offset:
         X: 0
         Y: 0
-        Z: 0.03
+        Z: 0.05
       Pose Style: None
       Topic: /mars_online/entry
       Unreliable: false
@@ -136,15 +147,15 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
-      Color: 40; 180; 255
+      Color: 0; 220; 255
       Enabled: true
       Line Style: Lines
-      Line Width: 0.06
-      Name: DAP Return Path
+      Line Width: 0.09
+      Name: DAP Return Path (Đường đi ra)
       Offset:
         X: 0
         Y: 0
-        Z: 0.04
+        Z: 0.07
       Pose Style: None
       Topic: /mars_online/return
       Unreliable: false
@@ -152,15 +163,15 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
-      Color: 60; 240; 70
+      Color: 50; 255; 70
       Enabled: true
       Line Style: Lines
-      Line Width: 0.05
-      Name: Active Step Plan
+      Line Width: 0.06
+      Name: Active Step Plan (Bước đi kế tiếp)
       Offset:
         X: 0
         Y: 0
-        Z: 0.05
+        Z: 0.09
       Pose Style: None
       Topic: /mars_online/plan
       Unreliable: false
