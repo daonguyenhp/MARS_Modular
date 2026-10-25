@@ -292,7 +292,8 @@ class OnlineNavigationNode : public rclcpp::Node {
       }
       status_log_ << "wall_ms,ros_ns,event,x,y,yaw,scan_sequence,observation_id,"
                      "active,recovery_phase,front_clearance,left_clearance,"
-                     "right_clearance,open_points,planned_points,trail_points\n";
+                     "right_clearance,open_points,planned_points,trail_points,"
+                     "blocked_targets\n";
       status_log_.flush();
       RCLCPP_INFO(get_logger(), "Writing status log to %s", status_log_path_.c_str());
     } catch (const std::exception& error) {
@@ -314,7 +315,7 @@ class OnlineNavigationNode : public rclcpp::Node {
                 << scan_sequence_ << ',' << observation_id_ << ',' << (active_ ? 1 : 0)
                 << ',' << recovery_phase_name() << ',' << front << ',' << left << ','
                 << right << ',' << last_open_points_ << ',' << planned_.size() << ','
-                << trail_.size() << '\n';
+                << trail_.size() << ',' << blocked_targets_.size() << '\n';
     status_log_.flush();
     logged_scan_sequence_ = scan_sequence_;
     logged_event_ = current_event_;
