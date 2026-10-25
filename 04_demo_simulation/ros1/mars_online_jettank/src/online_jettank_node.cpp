@@ -5,8 +5,10 @@
 #include <string>
 #include <vector>
 
+#include "gazebo_msgs/ModelStates.h"
 #include "geometry_msgs/Point.h"
 #include "geometry_msgs/PoseStamped.h"
+#include "geometry_msgs/TransformStamped.h"
 #include "geometry_msgs/Twist.h"
 #include "nav_msgs/OccupancyGrid.h"
 #include "nav_msgs/Odometry.h"
@@ -14,7 +16,9 @@
 #include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
 #include "std_msgs/String.h"
+#include "tf2/LinearMath/Quaternion.h"
 #include "tf2/utils.h"
+#include "tf2_ros/transform_broadcaster.h"
 #include "visualization_msgs/MarkerArray.h"
 
 #include "laser_geometry.hpp"
@@ -79,6 +83,7 @@ class OnlineJetTankNode {
     pnh_.param("linear_epsilon", config_.linear_epsilon, 0.03);
     pnh_.param("goal_x", goal_.x, 8.6);
     pnh_.param("goal_y", goal_.y, 6.8);
+    pnh_.param("robot_name", robot_name_, std::string("jettank"));
 
     mars::graph_bundle_management::GraphBundleConfig bundle_cfg;
     bundle_cfg.linear_epsilon = config_.linear_epsilon;
@@ -88,7 +93,7 @@ class OnlineJetTankNode {
     navigator_ = std::make_unique<Navigator>(config_);
 
     mars::demo_simulation::FollowerConfig follower_cfg;
-    follower_cfg.max_linear_speed = 0.22;  // JetTank safe speed in m/s
+    follower_cfg.max_linear_speed = 0.20;  // JetTank safe speed in m/s
     follower_cfg.max_angular_speed = 0.75; // rad/s
     follower_cfg.waypoint_tolerance = 0.10;
     follower_cfg.goal_tolerance = 0.10;
@@ -103,6 +108,7 @@ class OnlineJetTankNode {
       scan_sub_fallback_ = nh_.subscribe("scan", 5, &OnlineJetTankNode::on_scan, this);
     }
     odom_sub_ = nh_.subscribe("odom", 10, &OnlineJetTankNode::on_odom, this);
+    model_states_sub_ = nh_.subscribe("/gazebo/model_states", 10, &OnlineJetTankNode::on_model_states, this);
     goal_sub_ = nh_.subscribe("move_base_simple/goal", 1, &OnlineJetTankNode::on_goal, this);
 
     cmd_pub_ = nh_.advertise<Twist>("cmd_vel", 5);
@@ -116,8 +122,8 @@ class OnlineJetTankNode {
     map_pub_ = nh_.advertise<OccupancyGrid>("mars_online/map", 1);
 
     timer_ = nh_.createTimer(ros::Duration(0.05), &OnlineJetTankNode::control_step, this);
-    ROS_INFO("MARS Online JetTank node initialized. Goal: (%.2f, %.2f), Vision: %.2fm",
-             goal_.x, goal_.y, config_.vision_radius);
+    ROS_INFO("MARS Online JetTank node initialized. Goal: (%.2f, %.2f), Vision: %.2fm, MaxStep: %.2fm",
+             goal_.x, goal_.y, config_.vision_radius, config_.max_step);
   }
 
  private:
@@ -133,10 +139,10 @@ class OnlineJetTankNode {
     observed_map_.data.assign(observed_map_.info.width * observed_map_.info.height, -1);
   }
 
-  void on_odom(const Odometry::ConstPtr& msg) {
-    pose_.position.x = msg->pose.pose.position.x;
-    pose_.position.y = msg->pose.pose.position.y;
-    pose_.yaw = tf2::getYaw(msg->pose.pose.orientation);
+  void update_pose(double x, double y, double yaw) {
+    pose_.position.x = x;
+    pose_.position.y = y;
+    pose_.yaw = yaw;
     if (!have_pose_) {
       have_pose_ = true;
       entry_pose_ = pose_.position;
@@ -144,9 +150,42 @@ class OnlineJetTankNode {
       progress_time_ = ros::Time::now();
       trail_.push_back(pose_.position);
       entry_path_.push_back(pose_.position);
-      ROS_INFO("First odometry received at (%.2f, %.2f, yaw=%.2f)",
+      entry_trace_.push_back(pose_.position);
+      ROS_INFO("Robot initial spawn pose verified at (%.2f, %.2f, yaw=%.2f)",
                pose_.position.x, pose_.position.y, pose_.yaw);
     }
+
+    geometry_msgs::TransformStamped tf_msg;
+    tf_msg.header.stamp = ros::Time::now();
+    tf_msg.header.frame_id = "odom";
+    tf_msg.child_frame_id = "base_footprint";
+    tf_msg.transform.translation.x = x;
+    tf_msg.transform.translation.y = y;
+    tf_msg.transform.translation.z = 0.0;
+    tf2::Quaternion q;
+    q.setRPY(0, 0, yaw);
+    tf_msg.transform.rotation.x = q.x();
+    tf_msg.transform.rotation.y = q.y();
+    tf_msg.transform.rotation.z = q.z();
+    tf_msg.transform.rotation.w = q.w();
+    tf_broadcaster_.sendTransform(tf_msg);
+  }
+
+  void on_model_states(const gazebo_msgs::ModelStates::ConstPtr& msg) {
+    for (std::size_t i = 0; i < msg->name.size(); ++i) {
+      if (msg->name[i] == robot_name_ || msg->name[i] == "jettank") {
+        update_pose(msg->pose[i].position.x, msg->pose[i].position.y,
+                    tf2::getYaw(msg->pose[i].orientation));
+        have_ground_truth_ = true;
+        break;
+      }
+    }
+  }
+
+  void on_odom(const Odometry::ConstPtr& msg) {
+    if (have_ground_truth_) return;
+    update_pose(msg->pose.pose.position.x, msg->pose.pose.position.y,
+                tf2::getYaw(msg->pose.pose.orientation));
   }
 
   void on_scan(const LaserScan::ConstPtr& msg) {
@@ -212,7 +251,7 @@ class OnlineJetTankNode {
         }
 
         // Safety collision check: JetTank front clearance
-        if (command.linear_x > 0 && forward_clearance(scan_) < 0.22) {
+        if (command.linear_x > 0 && forward_clearance(scan_) < 0.20) {
           stop_robot();
           active_ = false;
           current_event_ = ++safety_stops_ >= 3 ? "SAFETY_BLOCKED" : "SAFETY_STOP";
@@ -225,7 +264,7 @@ class OnlineJetTankNode {
           twist.angular.z = command.angular_z;
           cmd_pub_.publish(twist);
           jettank_cmd_pub_.publish(twist);
-          if (trail_.empty() || distance(trail_.back(), pose_.position) > 0.05) {
+          if (trail_.empty() || distance(trail_.back(), pose_.position) > 0.03) {
             trail_.push_back(pose_.position);
           }
         }
@@ -317,9 +356,9 @@ class OnlineJetTankNode {
     current_event_ = decision.event;
     planned_ = decision.planned_path.points;
 
-    ROS_INFO("Observation %zu: event=%s, planned points=%zu",
+    ROS_INFO("Observation %zu: event=%s, planned points=%zu, walls=%zu, open_points=%zu",
              static_cast<std::size_t>(observation_id_),
-             current_event_.c_str(), planned_.size());
+             current_event_.c_str(), planned_.size(), obstacles.size(), perception.open_points.size());
 
     if (decision.state == mars::navigation_decision::NavigationState::GoalReached ||
         decision.state == mars::navigation_decision::NavigationState::Failed ||
@@ -328,7 +367,13 @@ class OnlineJetTankNode {
       stop_robot();
       return;
     }
-    if (decision.event == "RETURN_REACHED") return;
+    if (decision.event == "RETURN_REACHED") {
+      terminal_ = true;
+      stop_robot();
+      ROS_INFO("Escape complete! JetTank reached C0 / return target.");
+      return;
+    }
+
     if (planned_.size() < 2) {
       current_event_ = "NO_VALID_PATH";
       terminal_ = true;
@@ -343,61 +388,69 @@ class OnlineJetTankNode {
   }
 
   void publish_visuals() {
-    const ros::Time stamp = ros::Time::now();
-    String status_msg;
+    const auto stamp = ros::Time::now();
+    std_msgs::String status_msg;
     status_msg.data = current_event_;
     status_pub_.publish(status_msg);
 
-    auto make_path = [&](const std::vector<Point2D>& points) {
-      Path p;
-      p.header.frame_id = "odom";
-      p.header.stamp = stamp;
-      for (const auto pt : points) {
+    if (!have_pose_) return;
+
+    auto publish_path = [&](const std::vector<Point2D>& points, ros::Publisher& pub) {
+      Path path_msg;
+      path_msg.header.frame_id = "odom";
+      path_msg.header.stamp = stamp;
+      for (const auto p : points) {
         PoseStamped ps;
-        ps.header = p.header;
-        ps.pose.position.x = pt.x;
-        ps.pose.position.y = pt.y;
+        ps.header = path_msg.header;
+        ps.pose.position = to_ros_point(p, 0.02);
         ps.pose.orientation.w = 1.0;
-        p.poses.push_back(ps);
+        path_msg.poses.push_back(ps);
       }
-      return p;
+      pub.publish(path_msg);
     };
-    trail_pub_.publish(make_path(trail_));
-    plan_pub_.publish(make_path(planned_));
-    entry_pub_.publish(make_path(entry_trace_));
-    return_pub_.publish(make_path(return_trace_));
 
+    publish_path(trail_, trail_pub_);
+    publish_path(entry_trace_, entry_pub_);
+    publish_path(return_trace_, return_pub_);
+    publish_path(planned_, plan_pub_);
+
+    // Markers for bundles and open points
     MarkerArray markers;
-    Marker clear = make_marker("clear", 0, Marker::LINE_LIST, stamp);
-    clear.action = Marker::DELETEALL;
-    markers.markers.push_back(clear);
+    Marker points = make_marker("open_points", 0, Marker::SPHERE_LIST, stamp);
+    points.scale.x = 0.12;
+    points.scale.y = 0.12;
+    points.scale.z = 0.12;
+    points.color.r = 1.0;
+    points.color.g = 0.8;
+    points.color.b = 0.0;
+    points.color.a = 0.9;
 
-    // Goal marker
-    Marker goal_m = make_marker("goal", 0, Marker::SPHERE, stamp);
-    goal_m.pose.position = to_ros_point(goal_, 0.12);
-    goal_m.scale.x = 0.25; goal_m.scale.y = 0.25; goal_m.scale.z = 0.25;
-    goal_m.color.r = 0.95; goal_m.color.g = 0.15; goal_m.color.b = 0.10; goal_m.color.a = 1.0;
-    markers.markers.push_back(goal_m);
-
-    // Vision range circle
-    Marker range = make_marker("vision", 0, Marker::LINE_STRIP, stamp);
-    range.scale.x = 0.02;
-    range.color.r = 0.85; range.color.g = 0.30; range.color.b = 0.10; range.color.a = 0.7;
-    for (int i = 0; i <= 72; ++i) {
-      const double a = 2.0 * M_PI * i / 72.0;
-      range.points.push_back(to_ros_point({pose_.position.x + config_.vision_radius * std::cos(a),
-                                           pose_.position.y + config_.vision_radius * std::sin(a)}, 0.02));
+    for (const auto& ranked : manager_->ranked_open_points()) {
+      points.points.push_back(to_ros_point(ranked.point, 0.05));
     }
-    markers.markers.push_back(range);
+    markers.markers.push_back(points);
 
-    // Bundle rays
-    Marker rays = make_marker("bundles", 0, Marker::LINE_LIST, stamp);
-    rays.scale.x = 0.015;
-    rays.color.r = 0.0; rays.color.g = 0.65; rays.color.b = 0.90; rays.color.a = 0.7;
+    Marker target_marker = make_marker("target", 1, Marker::SPHERE, stamp);
+    target_marker.scale.x = 0.20;
+    target_marker.scale.y = 0.20;
+    target_marker.scale.z = 0.20;
+    target_marker.color.r = 0.0;
+    target_marker.color.g = 1.0;
+    target_marker.color.b = 0.3;
+    target_marker.color.a = 0.9;
+    target_marker.pose.position = to_ros_point(goal_, 0.05);
+    markers.markers.push_back(target_marker);
+
+    Marker rays = make_marker("bundles", 2, Marker::LINE_LIST, stamp);
+    rays.scale.x = 0.02;
+    rays.color.r = 0.4;
+    rays.color.g = 0.8;
+    rays.color.b = 1.0;
+    rays.color.a = 0.6;
     for (const auto& bundle : manager_->bundle_history().bundles()) {
       for (const auto& segment : bundle.segments) {
-        rays.points.push_back(to_ros_point(segment.start, 0.08));
-        rays.points.push_back(to_ros_point(segment.end, 0.08));
+        rays.points.push_back(to_ros_point(segment.start, 0.04));
+        rays.points.push_back(to_ros_point(segment.end, 0.04));
       }
     }
     markers.markers.push_back(rays);
@@ -410,6 +463,8 @@ class OnlineJetTankNode {
   std::unique_ptr<Navigator> navigator_;
   std::unique_ptr<mars::demo_simulation::PathFollower> follower_;
 
+  std::string robot_name_{"jettank"};
+  bool have_ground_truth_{false};
   Point2D goal_{}, entry_pose_{};
   Pose2D pose_{}, progress_pose_{};
   LaserFrame scan_{};
@@ -420,9 +475,10 @@ class OnlineJetTankNode {
   bool have_pose_{false}, active_{false}, terminal_{false};
   int safety_stops_{0};
 
-  ros::Subscriber scan_sub_, scan_sub_fallback_, odom_sub_, goal_sub_;
+  ros::Subscriber scan_sub_, scan_sub_fallback_, odom_sub_, model_states_sub_, goal_sub_;
   ros::Publisher cmd_pub_, jettank_cmd_pub_, status_pub_, marker_pub_;
   ros::Publisher trail_pub_, plan_pub_, entry_pub_, return_pub_, map_pub_;
+  tf2_ros::TransformBroadcaster tf_broadcaster_;
   OccupancyGrid observed_map_;
   ros::Timer timer_;
 };

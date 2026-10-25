@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(catkin REQUIRED COMPONENTS
+  gazebo_msgs
   geometry_msgs
   nav_msgs
   roscpp
@@ -17,7 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs nav_msgs std_msgs tf2 tf2_ros visualization_msgs
+  CATKIN_DEPENDS roscpp gazebo_msgs sensor_msgs geometry_msgs nav_msgs std_msgs tf2 tf2_ros visualization_msgs
 )
 
 set(BUILD_TESTING OFF CACHE BOOL "Skip sibling module tests" FORCE)

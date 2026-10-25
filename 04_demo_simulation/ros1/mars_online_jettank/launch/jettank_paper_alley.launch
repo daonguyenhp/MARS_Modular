@@ -12,7 +12,7 @@
 
   <!-- Navigation & Sensor Parameters -->
   <arg name="vision_radius" default="1.6" />
-  <arg name="max_step" default="2.0" />
+  <arg name="max_step" default="0.70" />
   <arg name="goal_x" default="8.6" />
   <arg name="goal_y" default="6.8" />
   <arg name="scan_topic" default="scan_raw" />
@@ -59,6 +59,7 @@
     <param name="goal_x" value="$(arg goal_x)" />
     <param name="goal_y" value="$(arg goal_y)" />
     <param name="scan_topic" value="$(arg scan_topic)" />
+    <param name="robot_name" value="$(arg robot_name)" />
   </node>
 
   <!-- 6. RViz Display -->

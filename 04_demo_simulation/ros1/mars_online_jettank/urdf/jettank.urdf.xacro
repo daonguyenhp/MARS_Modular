@@ -154,7 +154,21 @@
     <material>Gazebo/Blue</material>
   </gazebo>
 
-  <!-- Differential Drive Controller Plugin -->
+  <!-- Ground-truth 3D Odometry Plugin: ensures odom starts at exact spawn pose in paper alley -->
+  <gazebo>
+    <plugin name="p3d_base_controller" filename="libgazebo_ros_p3d.so">
+      <alwaysOn>true</alwaysOn>
+      <updateRate>50.0</updateRate>
+      <bodyName>base_footprint</bodyName>
+      <topicName>odom</topicName>
+      <gaussianNoise>0</gaussianNoise>
+      <frameName>odom</frameName>
+      <xyzOffsets>0 0 0</xyzOffsets>
+      <rpyOffsets>0 0 0</rpyOffsets>
+    </plugin>
+  </gazebo>
+
+  <!-- Differential Drive Controller Plugin for JetTank tracks -->
   <gazebo>
     <plugin name="differential_drive_controller" filename="libgazebo_ros_diff_drive.so">
       <alwaysOn>true</alwaysOn>
@@ -166,17 +180,17 @@
       <wheelTorque>20</wheelTorque>
       <wheelAcceleration>2.0</wheelAcceleration>
       <commandTopic>hiwonder_controller/cmd_vel</commandTopic>
-      <odometryTopic>odom</odometryTopic>
+      <odometryTopic>odom_encoder</odometryTopic>
       <odometryFrame>odom</odometryFrame>
       <robotBaseFrame>base_footprint</robotBaseFrame>
       <publishWheelTF>false</publishWheelTF>
-      <publishOdomTF>true</publishOdomTF>
+      <publishOdomTF>false</publishOdomTF>
       <publishWheelJointState>true</publishWheelJointState>
-      <publishTf>1</publishTf>
+      <publishTf>0</publishTf>
     </plugin>
   </gazebo>
 
-  <!-- Lidar Ray Sensor Plugin (Standard ROS 1 Gazebo) -->
+  <!-- Lidar Ray Sensor Plugin matching Paper limited vision range R = 1.6m -->
   <gazebo reference="laser_frame">
     <sensor type="ray" name="rplidar_sensor">
       <pose>0 0 0 0 0 0</pose>
@@ -193,7 +207,7 @@
         </scan>
         <range>
           <min>0.10</min>
-          <max>6.0</max>
+          <max>1.60</max>
           <resolution>0.01</resolution>
         </range>
         <noise>

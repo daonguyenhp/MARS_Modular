@@ -58,32 +58,19 @@ std::vector<Polygon2D> scan_to_obstacles(const LaserFrame& scan,
     }
     cluster.clear();
   };
-
-  const double cos_yaw = std::cos(pose.yaw);
-  const double sin_yaw = std::sin(pose.yaw);
-  Point2D previous{0.0, 0.0};
-  bool have_previous = false;
-
   for (std::size_t i = 0; i < scan.ranges.size(); ++i) {
-    const double r = scan.ranges[i];
-    if (!std::isfinite(r) || r < scan.range_min || r > vision_radius) {
+    const double r = static_cast<double>(scan.ranges[i]);
+    if (!std::isfinite(r) || r <= scan.range_min ||
+        r >= std::min(scan.range_max, vision_radius) - 0.02) {
       flush();
-      have_previous = false;
       continue;
     }
-    const double angle = scan.angle_min + static_cast<double>(i) * scan.angle_increment;
-    const double local_x = r * std::cos(angle);
-    const double local_y = r * std::sin(angle);
-    const Point2D current{
-        pose.position.x + local_x * cos_yaw - local_y * sin_yaw,
-        pose.position.y + local_x * sin_yaw + local_y * cos_yaw,
-    };
-    if (have_previous && distance(previous, current) > 0.25) {
-      flush();
-    }
-    cluster.push_back(current);
-    previous = current;
-    have_previous = true;
+    const double theta = pose.yaw + scan.angle_min +
+                         static_cast<double>(i) * scan.angle_increment;
+    const Point2D point{pose.position.x + r * std::cos(theta),
+                        pose.position.y + r * std::sin(theta)};
+    if (!cluster.empty() && distance(cluster.back(), point) > 0.12) flush();
+    cluster.push_back(point);
   }
   flush();
   return result;
@@ -91,35 +78,30 @@ std::vector<Polygon2D> scan_to_obstacles(const LaserFrame& scan,
 
 bool target_visible_in_scan(const LaserFrame& scan,
                             mars::common::Pose2D pose,
-                            mars::common::Point2D target,
-                            double vision_radius) {
-  const double target_dist = distance(pose.position, target);
-  if (target_dist > vision_radius || target_dist < 1e-3) return false;
-  double angle = std::atan2(target.y - pose.position.y, target.x - pose.position.x) - pose.yaw;
-  while (angle <= -M_PI) angle += 2.0 * M_PI;
-  while (angle > M_PI) angle -= 2.0 * M_PI;
-  if (angle < scan.angle_min || angle > scan.angle_min + scan.ranges.size() * scan.angle_increment) {
-    return false;
-  }
-  const int index = static_cast<int>(std::round((angle - scan.angle_min) / scan.angle_increment));
-  if (index < 0 || static_cast<std::size_t>(index) >= scan.ranges.size()) return false;
-  const double measured = scan.ranges[static_cast<std::size_t>(index)];
-  return !std::isfinite(measured) || measured > target_dist - 0.12;
+                            Point2D target, double vision_radius) {
+  const double gap = distance(pose.position, target);
+  if (gap > vision_radius || gap < 1e-6 || scan.ranges.empty() ||
+      scan.angle_increment <= 0.0) return false;
+  const double bearing = std::atan2(target.y - pose.position.y,
+                                    target.x - pose.position.x) - pose.yaw;
+  const double wrapped = std::atan2(std::sin(bearing), std::cos(bearing));
+  const double index_float = (wrapped - scan.angle_min) / scan.angle_increment;
+  const auto index = static_cast<long>(std::lround(index_float));
+  if (index < 0 || index >= static_cast<long>(scan.ranges.size())) return false;
+  const double seen = static_cast<double>(scan.ranges[static_cast<std::size_t>(index)]);
+  return !std::isfinite(seen) || seen > gap + 0.12;
 }
 
 double forward_clearance(const LaserFrame& scan) {
-  double clearance = std::numeric_limits<double>::infinity();
+  double closest = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < scan.ranges.size(); ++i) {
-    const double r = scan.ranges[i];
-    if (!std::isfinite(r) || r < scan.range_min) continue;
-    double a = scan.angle_min + static_cast<double>(i) * scan.angle_increment;
-    while (a <= -M_PI) a += 2.0 * M_PI;
-    while (a > M_PI) a -= 2.0 * M_PI;
-    if (std::abs(a) <= 0.35) {
-      clearance = std::min(clearance, r * std::cos(a));
-    }
+    const double angle = scan.angle_min + static_cast<double>(i) * scan.angle_increment;
+    const double wrapped = std::atan2(std::sin(angle), std::cos(angle));
+    if (std::abs(wrapped) > 0.30) continue;
+    const double r = static_cast<double>(scan.ranges[i]);
+    if (std::isfinite(r) && r > scan.range_min) closest = std::min(closest, r);
   }
-  return clearance;
+  return closest;
 }
 
 }  // namespace mars::online_jettank
