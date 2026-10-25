@@ -41,7 +41,10 @@ and `git pull --ff-only` instead. Do not use `git switch --track` a second time.
 Gazebo must be **playing**. If your VM cannot render the GPU LiDAR with Ogre2,
 check `ros2 topic hz /scan`; the node deliberately waits instead of moving.
 
-The default goal is `(8.6, 6.8)` m. The original Figure 8/9 goal `(86,86)`
+The launch arguments `start_x/start_y` and `goal_x/goal_y` are expressed in
+world coordinates. Gazebo's odometry starts at `(0,0)` at the spawn pose, so
+the launch passes the spawn offset to the node and converts the goal into the
+odom frame automatically. The default goal is `(8.6, 6.8)` m. The original Figure 8/9 goal `(86,86)`
 sketch units lies *inside* an obstacle; it cannot be used as a physical robot
 destination. Use RViz's `2D Goal Pose` tool to send a different free-space goal
 on `/goal_pose` (frame `odom`) and reset the online planner.

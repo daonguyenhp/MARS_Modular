@@ -41,6 +41,7 @@ def generate_launch_description():
     navigation = Node(
         package="mars_online_gazebo", executable="online_navigation_node",
         parameters=[{"use_sim_time": True, "goal_x": goal_x, "goal_y": goal_y,
+                     "spawn_x": start_x, "spawn_y": start_y,
                      "status_log": status_log}],
         output="screen",
     )

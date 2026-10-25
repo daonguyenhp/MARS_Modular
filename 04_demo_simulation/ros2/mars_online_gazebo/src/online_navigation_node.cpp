@@ -69,8 +69,14 @@ double wrap_angle(double angle) {
 class OnlineNavigationNode : public rclcpp::Node {
  public:
   OnlineNavigationNode() : Node("mars_online_navigation") {
-    goal_ = {declare_parameter<double>("goal_x", 8.6),
-             declare_parameter<double>("goal_y", 6.8)};
+    const double world_goal_x = declare_parameter<double>("goal_x", 8.6);
+    const double world_goal_y = declare_parameter<double>("goal_y", 6.8);
+    // Gazebo's differential-drive odometry is local to the spawn pose. The
+    // launch file therefore passes the world spawn offset so a world-frame
+    // test goal can be converted into the node's odom frame.
+    spawn_x_ = declare_parameter<double>("spawn_x", 0.0);
+    spawn_y_ = declare_parameter<double>("spawn_y", 0.0);
+    goal_ = {world_goal_x - spawn_x_, world_goal_y - spawn_y_};
     status_log_path_ = declare_parameter<std::string>(
         "status_log", "/tmp/mars_online_status.csv");
     config_.vision_radius = 1.6;
@@ -536,6 +542,7 @@ class OnlineNavigationNode : public rclcpp::Node {
   std::unique_ptr<mars::demo_simulation::PathFollower> follower_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   Point2D goal_{}, entry_pose_{};
+  double spawn_x_{0.0}, spawn_y_{0.0};
   Pose2D pose_{};
   Pose2D progress_pose_{};
   LaserFrame scan_{};
