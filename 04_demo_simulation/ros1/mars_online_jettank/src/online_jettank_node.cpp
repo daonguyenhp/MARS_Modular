@@ -36,6 +36,7 @@ using geometry_msgs::PoseStamped;
 using geometry_msgs::Twist;
 using mars::common::Point2D;
 using mars::common::Pose2D;
+using mars::common::Polygon2D;
 using mars::graph_bundle_management::GraphBundleManager;
 using mars::navigation_decision::NavigationObservation;
 using mars::navigation_decision::Navigator;
@@ -332,24 +333,32 @@ class OnlineJetTankNode {
   }
 
   void plan_from_current_scan() {
-    const auto obstacles = scan_to_obstacles(scan_, pose_, config_.vision_radius);
-    auto perception = mars::perception_geometry::perceive(
-        pose_.position, config_.vision_radius, obstacles);
+    latest_obstacles_ = scan_to_obstacles(scan_, pose_, config_.vision_radius);
+    latest_perception_ = mars::perception_geometry::perceive(
+        pose_.position, config_.vision_radius, latest_obstacles_);
 
-    // Sanitize open points so none violate neighbor_sight_supports_point
-    perception.open_points.erase(
-        std::remove_if(perception.open_points.begin(), perception.open_points.end(),
+    // Sanitize open points:
+    // 1. Must satisfy neighbor_sight_supports_point
+    // 2. Direct line-of-sight must NOT be occluded by raw laser scan returns
+    latest_perception_.open_points.erase(
+        std::remove_if(latest_perception_.open_points.begin(), latest_perception_.open_points.end(),
                        [&](const mars::perception_geometry::OpenPoint& op) {
-                         return !mars::graph_bundle_management::neighbor_sight_supports_point(
-                             perception.neighbor_sight, op.point, config_.linear_epsilon);
+                         if (!mars::graph_bundle_management::neighbor_sight_supports_point(
+                                 latest_perception_.neighbor_sight, op.point, config_.linear_epsilon)) {
+                           return true;
+                         }
+                         if (is_point_occluded_in_scan(scan_, pose_, op.point, 0.15)) {
+                           return true;
+                         }
+                         return false;
                        }),
-        perception.open_points.end());
+        latest_perception_.open_points.end());
 
     mars::graph_bundle_management::GraphBundleUpdate update;
     update.observation_id = ++observation_id_;
     update.current_pose = pose_;
     update.goal = goal_;
-    update.perception = perception;
+    update.perception = latest_perception_;
     manager_->update(update);
 
     NavigationObservation observation;
@@ -423,17 +432,35 @@ class OnlineJetTankNode {
     current_event_ = decision.event;
     planned_ = decision.planned_path.points;
 
+    // In FUNNEL mode, ensure reliable escape route:
+    if (current_event_ == "FUNNEL" || current_event_ == "FUNNEL_FAIL") {
+      if (planned_.size() < 2 || current_event_ == "FUNNEL_FAIL") {
+        ROS_INFO("Observation %zu: Using reverse entry path for DAP funnel escape",
+                 static_cast<std::size_t>(observation_id_));
+        planned_.clear();
+        for (auto it = entry_path_.rbegin(); it != entry_path_.rend(); ++it) {
+          if (planned_.empty() || distance(planned_.back(), *it) > 0.20) {
+            planned_.push_back(*it);
+          }
+        }
+        current_event_ = "FUNNEL";
+      }
+      // Step-by-step retreat: take one hop per observation
+      if (planned_.size() > 2) {
+        planned_.resize(2);
+      }
+    }
+
     ROS_INFO("Observation %zu: event=%s, planned points=%zu, walls=%zu, open_points=%zu",
              static_cast<std::size_t>(observation_id_),
-             current_event_.c_str(), planned_.size(), obstacles.size(), perception.open_points.size());
+             current_event_.c_str(), planned_.size(), latest_obstacles_.size(), latest_perception_.open_points.size());
     if (planned_.size() >= 2) {
       ROS_INFO("Target waypoint: (%.2f, %.2f), distance: %.2fm",
                planned_.back().x, planned_.back().y, distance(pose_.position, planned_.back()));
     }
 
     if (decision.state == mars::navigation_decision::NavigationState::GoalReached ||
-        decision.state == mars::navigation_decision::NavigationState::Failed ||
-        decision.event == "FUNNEL_FAIL") {
+        decision.state == mars::navigation_decision::NavigationState::Failed) {
       terminal_ = true;
       stop_robot();
       return;
@@ -485,46 +512,171 @@ class OnlineJetTankNode {
     publish_path(return_trace_, return_pub_);
     publish_path(planned_, plan_pub_);
 
-    // Markers for bundles and open points
     MarkerArray markers;
-    Marker points = make_marker("open_points", 0, Marker::SPHERE_LIST, stamp);
-    points.scale.x = 0.12;
-    points.scale.y = 0.12;
-    points.scale.z = 0.12;
-    points.color.r = 1.0;
-    points.color.g = 0.8;
-    points.color.b = 0.0;
-    points.color.a = 0.9;
 
-    for (const auto& ranked : manager_->ranked_open_points()) {
-      points.points.push_back(to_ros_point(ranked.point, 0.05));
-    }
-    markers.markers.push_back(points);
-
-    Marker target_marker = make_marker("target", 1, Marker::SPHERE, stamp);
-    target_marker.scale.x = 0.20;
-    target_marker.scale.y = 0.20;
-    target_marker.scale.z = 0.20;
-    target_marker.color.r = 0.0;
-    target_marker.color.g = 1.0;
-    target_marker.color.b = 0.3;
-    target_marker.color.a = 0.9;
-    target_marker.pose.position = to_ros_point(goal_, 0.05);
-    markers.markers.push_back(target_marker);
-
-    Marker rays = make_marker("bundles", 2, Marker::LINE_LIST, stamp);
-    rays.scale.x = 0.02;
-    rays.color.r = 0.4;
-    rays.color.g = 0.8;
+    // 1. Ray bundles: cyan fan lines radiating from robot base
+    Marker rays = make_marker("ray_bundles", 0, Marker::LINE_LIST, stamp);
+    rays.scale.x = 0.015;
+    rays.color.r = 0.0;
+    rays.color.g = 0.85;
     rays.color.b = 1.0;
-    rays.color.a = 0.6;
-    for (const auto& bundle : manager_->bundle_history().bundles()) {
-      for (const auto& segment : bundle.segments) {
-        rays.points.push_back(to_ros_point(segment.start, 0.04));
-        rays.points.push_back(to_ros_point(segment.end, 0.04));
+    rays.color.a = 0.45;
+    if (!scan_.ranges.empty() && scan_.angle_increment > 0.0) {
+      const std::size_t step = std::max<std::size_t>(1, scan_.ranges.size() / 120);
+      for (std::size_t i = 0; i < scan_.ranges.size(); i += step) {
+        const double r = static_cast<double>(scan_.ranges[i]);
+        if (!std::isfinite(r) || r <= scan_.range_min) continue;
+        const double display_r = std::min(r, config_.vision_radius);
+        const double angle = pose_.yaw + scan_.angle_min + static_cast<double>(i) * scan_.angle_increment;
+        rays.points.push_back(to_ros_point(pose_.position, 0.04));
+        rays.points.push_back(to_ros_point(
+            {pose_.position.x + display_r * std::cos(angle),
+             pose_.position.y + display_r * std::sin(angle)},
+            0.04));
       }
     }
     markers.markers.push_back(rays);
+
+    // 2. Open Sights (vùng tia mở): translucent green fan sectors
+    Marker open_fans = make_marker("open_sights", 1, Marker::TRIANGLE_LIST, stamp);
+    open_fans.scale.x = 1.0;
+    open_fans.scale.y = 1.0;
+    open_fans.scale.z = 1.0;
+    open_fans.color.r = 0.15;
+    open_fans.color.g = 0.95;
+    open_fans.color.b = 0.25;
+    open_fans.color.a = 0.35;
+    for (const auto& sight : latest_perception_.open_sights) {
+      const double start = sight.interval.start;
+      const double sweep = sight.interval.sweep;
+      const int slices = std::max(6, static_cast<int>(sweep / 0.08));
+      const double step = sweep / static_cast<double>(slices);
+      for (int s = 0; s < slices; ++s) {
+        const double a1 = start + static_cast<double>(s) * step;
+        const double a2 = start + static_cast<double>(s + 1) * step;
+        const Point2D p0 = latest_perception_.neighbor_sight.center;
+        const Point2D p1{p0.x + config_.vision_radius * std::cos(a1),
+                         p0.y + config_.vision_radius * std::sin(a1)};
+        const Point2D p2{p0.x + config_.vision_radius * std::cos(a2),
+                         p0.y + config_.vision_radius * std::sin(a2)};
+        open_fans.points.push_back(to_ros_point(p0, 0.025));
+        open_fans.points.push_back(to_ros_point(p1, 0.025));
+        open_fans.points.push_back(to_ros_point(p2, 0.025));
+      }
+    }
+    markers.markers.push_back(open_fans);
+
+    // 3. Closed Sights (vùng tia đóng/chặn): translucent red fan sectors
+    Marker closed_fans = make_marker("closed_sights", 2, Marker::TRIANGLE_LIST, stamp);
+    closed_fans.scale.x = 1.0;
+    closed_fans.scale.y = 1.0;
+    closed_fans.scale.z = 1.0;
+    closed_fans.color.r = 0.95;
+    closed_fans.color.g = 0.20;
+    closed_fans.color.b = 0.30;
+    closed_fans.color.a = 0.25;
+    for (const auto& sight : latest_perception_.closed_sights) {
+      const double start = sight.interval.start;
+      const double sweep = sight.interval.sweep;
+      const int slices = std::max(6, static_cast<int>(sweep / 0.08));
+      const double step = sweep / static_cast<double>(slices);
+      for (int s = 0; s < slices; ++s) {
+        const double a1 = start + static_cast<double>(s) * step;
+        const double a2 = start + static_cast<double>(s + 1) * step;
+        const Point2D p0 = latest_perception_.neighbor_sight.center;
+        const Point2D p1{p0.x + config_.vision_radius * std::cos(a1),
+                         p0.y + config_.vision_radius * std::sin(a1)};
+        const Point2D p2{p0.x + config_.vision_radius * std::cos(a2),
+                         p0.y + config_.vision_radius * std::sin(a2)};
+        closed_fans.points.push_back(to_ros_point(p0, 0.020));
+        closed_fans.points.push_back(to_ros_point(p1, 0.020));
+        closed_fans.points.push_back(to_ros_point(p2, 0.020));
+      }
+    }
+    markers.markers.push_back(closed_fans);
+
+    // 4. Perceived Obstacle Walls: thick neon orange lines
+    Marker walls = make_marker("perceived_walls", 3, Marker::LINE_LIST, stamp);
+    walls.scale.x = 0.04;
+    walls.color.r = 1.0;
+    walls.color.g = 0.55;
+    walls.color.b = 0.0;
+    walls.color.a = 0.95;
+    for (const auto& poly : latest_obstacles_) {
+      if (poly.vertices.size() >= 2) {
+        walls.points.push_back(to_ros_point(poly.vertices.front(), 0.06));
+        walls.points.push_back(to_ros_point(poly.vertices.back(), 0.06));
+      }
+    }
+    markers.markers.push_back(walls);
+
+    // 5. Open Points: bright gold spheres on sensing circle
+    Marker points = make_marker("open_points", 4, Marker::SPHERE_LIST, stamp);
+    points.scale.x = 0.14;
+    points.scale.y = 0.14;
+    points.scale.z = 0.14;
+    points.color.r = 1.0;
+    points.color.g = 0.85;
+    points.color.b = 0.0;
+    points.color.a = 0.95;
+    for (const auto& op : latest_perception_.open_points) {
+      points.points.push_back(to_ros_point(op.point, 0.08));
+    }
+    markers.markers.push_back(points);
+
+    // 6. Observation Centers (C0, C1, C2...): magenta spheres
+    Marker centers = make_marker("observation_centers", 5, Marker::SPHERE_LIST, stamp);
+    centers.scale.x = 0.16;
+    centers.scale.y = 0.16;
+    centers.scale.z = 0.16;
+    centers.color.r = 0.85;
+    centers.color.g = 0.20;
+    centers.color.b = 1.0;
+    centers.color.a = 0.95;
+    for (const auto& c : entry_path_) {
+      centers.points.push_back(to_ros_point(c, 0.07));
+    }
+    markers.markers.push_back(centers);
+
+    // 7. Observation Center text labels (C0, C1, C2...)
+    for (std::size_t i = 0; i < entry_path_.size(); ++i) {
+      Marker label = make_marker("center_labels", static_cast<int>(100 + i), Marker::TEXT_VIEW_FACING, stamp);
+      label.scale.z = 0.22;
+      label.color.r = 1.0;
+      label.color.g = 1.0;
+      label.color.b = 1.0;
+      label.color.a = 0.95;
+      label.pose.position = to_ros_point(entry_path_[i], 0.35);
+      label.text = "C" + std::to_string(i);
+      markers.markers.push_back(label);
+    }
+
+    // 8. Goal target marker: large green sphere
+    Marker target_marker = make_marker("target", 6, Marker::SPHERE, stamp);
+    target_marker.scale.x = 0.24;
+    target_marker.scale.y = 0.24;
+    target_marker.scale.z = 0.24;
+    target_marker.color.r = 0.0;
+    target_marker.color.g = 1.0;
+    target_marker.color.b = 0.3;
+    target_marker.color.a = 0.95;
+    target_marker.pose.position = to_ros_point(goal_, 0.08);
+    markers.markers.push_back(target_marker);
+
+    // 9. Active Waypoint: bright yellow cylinder
+    if (planned_index_ < planned_.size()) {
+      Marker wp = make_marker("active_waypoint", 7, Marker::CYLINDER, stamp);
+      wp.scale.x = 0.18;
+      wp.scale.y = 0.18;
+      wp.scale.z = 0.30;
+      wp.color.r = 1.0;
+      wp.color.g = 1.0;
+      wp.color.b = 0.0;
+      wp.color.a = 0.85;
+      wp.pose.position = to_ros_point(planned_[planned_index_], 0.15);
+      markers.markers.push_back(wp);
+    }
+
     marker_pub_.publish(markers);
   }
 
@@ -539,6 +691,8 @@ class OnlineJetTankNode {
   Point2D goal_{}, entry_pose_{};
   Pose2D pose_{}, progress_pose_{};
   LaserFrame scan_{};
+  mars::perception_geometry::PerceptionResult latest_perception_;
+  std::vector<Polygon2D> latest_obstacles_;
   std::vector<Point2D> entry_path_, trail_, planned_, entry_trace_, return_trace_;
   std::string current_event_{"INIT"};
   ros::Time progress_time_{}, scan_time_{}, last_tf_stamp_{}, settle_time_{};

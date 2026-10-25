@@ -23,6 +23,11 @@ bool target_visible_in_scan(const LaserFrame& scan,
                             mars::common::Point2D target,
                             double vision_radius);
 
+bool is_point_occluded_in_scan(const LaserFrame& scan,
+                               mars::common::Pose2D pose,
+                               mars::common::Point2D target,
+                               double margin = 0.15);
+
 double forward_clearance(const LaserFrame& scan);
 
 }  // namespace mars::online_jettank
