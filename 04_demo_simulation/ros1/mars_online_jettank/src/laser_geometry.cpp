@@ -133,7 +133,7 @@ bool is_point_occluded_in_scan(const LaserFrame& scan,
 
   int blocked_rays = 0;
   int valid_rays = 0;
-  for (int offset = -4; offset <= 4; ++offset) {
+  for (int offset = -8; offset <= 8; ++offset) {
     const long idx = center_index + offset;
     if (idx >= 0 && idx < static_cast<long>(scan.ranges.size())) {
       const double r = static_cast<double>(scan.ranges[static_cast<std::size_t>(idx)]);

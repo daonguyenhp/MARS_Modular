@@ -358,10 +358,18 @@ class OnlineJetTankNode {
       return distance(p, proj);
     };
 
+    auto ccw = [](Point2D a, Point2D b, Point2D c) {
+      return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x);
+    };
+    auto segments_intersect = [&](Point2D p1, Point2D p2, Point2D p3, Point2D p4) {
+      return (ccw(p1, p3, p4) != ccw(p2, p3, p4)) && (ccw(p1, p2, p3) != ccw(p1, p2, p4));
+    };
+
     // Sanitize open points:
     // 1. Must satisfy neighbor_sight_supports_point
     // 2. Direct line-of-sight must NOT be occluded by raw laser scan returns
-    // 3. Candidate open point must have safe clearance from all obstacle walls (>= 0.16m)
+    // 3. Line from robot to candidate point must NOT cross any obstacle wall!
+    // 4. Candidate open point must have safe clearance from all obstacle walls (>= 0.20m)
     latest_perception_.open_points.erase(
         std::remove_if(latest_perception_.open_points.begin(), latest_perception_.open_points.end(),
                        [&](const mars::perception_geometry::OpenPoint& op) {
@@ -369,12 +377,17 @@ class OnlineJetTankNode {
                                  latest_perception_.neighbor_sight, op.point, config_.linear_epsilon)) {
                            return true;
                          }
-                         if (is_point_occluded_in_scan(scan_, pose_, op.point, 0.03)) {
+                         if (is_point_occluded_in_scan(scan_, pose_, op.point, 0.04)) {
                            return true;
                          }
                          for (const auto& poly : latest_obstacles_) {
                            if (poly.vertices.size() >= 2) {
-                             if (point_to_segment_dist(op.point, poly.vertices.front(), poly.vertices.back()) < 0.16) {
+                             const Point2D w1 = poly.vertices.front();
+                             const Point2D w2 = poly.vertices.back();
+                             if (segments_intersect(pose_.position, op.point, w1, w2)) {
+                               return true;
+                             }
+                             if (point_to_segment_dist(op.point, w1, w2) < 0.20) {
                                return true;
                              }
                            }
@@ -552,44 +565,48 @@ class OnlineJetTankNode {
 
     MarkerArray markers;
 
-    // 1. Ray bundles: electric cyan fan lines radiating from LiDAR puck at z = 0.16m
+    // 1. Ray bundles: clean, bounded fan lines (36 rays, exactly 10 deg spacing) in laser_frame (NO skew!)
     Marker rays = make_marker("ray_bundles", 0, Marker::LINE_LIST, stamp);
-    rays.scale.x = 0.020;
+    rays.header.frame_id = "laser_frame";
+    rays.scale.x = 0.015;
     rays.color.r = 0.0;
     rays.color.g = 0.95;
     rays.color.b = 1.0;
-    rays.color.a = 0.65;
-    const double lidar_z = 0.16;
+    rays.color.a = 0.55;
     if (!scan_.ranges.empty() && scan_.angle_increment > 0.0) {
-      const std::size_t step = std::max<std::size_t>(1, scan_.ranges.size() / 180);
+      const std::size_t step = std::max<std::size_t>(1, scan_.ranges.size() / 36);
       for (std::size_t i = 0; i < scan_.ranges.size(); i += step) {
         const double r = static_cast<double>(scan_.ranges[i]);
         if (!std::isfinite(r) || r <= scan_.range_min) continue;
         const double display_r = std::min(r, config_.vision_radius);
-        const double angle = pose_.yaw + scan_.angle_min + static_cast<double>(i) * scan_.angle_increment;
-        rays.points.push_back(to_ros_point(pose_.position, lidar_z));
-        rays.points.push_back(to_ros_point(
-            {pose_.position.x + display_r * std::cos(angle),
-             pose_.position.y + display_r * std::sin(angle)},
-            lidar_z));
+        const double scan_angle = scan_.angle_min + static_cast<double>(i) * scan_.angle_increment;
+        Point p0; p0.x = 0.0; p0.y = 0.0; p0.z = 0.0;
+        Point p1;
+        p1.x = display_r * std::cos(scan_angle);
+        p1.y = display_r * std::sin(scan_angle);
+        p1.z = 0.0;
+        rays.points.push_back(p0);
+        rays.points.push_back(p1);
       }
     }
     markers.markers.push_back(rays);
 
-    // 2. Vision boundary ring (R = 1.6m at z = 0.16m)
+    // 2. Vision boundary ring (R = 1.6m) centered on laser_frame
     Marker vision_ring = make_marker("vision_boundary", 10, Marker::LINE_STRIP, stamp);
-    vision_ring.scale.x = 0.020;
+    vision_ring.header.frame_id = "laser_frame";
+    vision_ring.scale.x = 0.018;
     vision_ring.color.r = 0.0;
     vision_ring.color.g = 0.85;
     vision_ring.color.b = 1.0;
-    vision_ring.color.a = 0.50;
-    const int ring_segments = 72;
+    vision_ring.color.a = 0.40;
+    const int ring_segments = 64;
     for (int k = 0; k <= ring_segments; ++k) {
       const double theta = (2.0 * M_PI * k) / ring_segments;
-      vision_ring.points.push_back(to_ros_point(
-          {pose_.position.x + config_.vision_radius * std::cos(theta),
-           pose_.position.y + config_.vision_radius * std::sin(theta)},
-          lidar_z));
+      Point p;
+      p.x = config_.vision_radius * std::cos(theta);
+      p.y = config_.vision_radius * std::sin(theta);
+      p.z = 0.0;
+      vision_ring.points.push_back(p);
     }
     markers.markers.push_back(vision_ring);
 
