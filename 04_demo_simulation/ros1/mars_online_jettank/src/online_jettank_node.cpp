@@ -23,6 +23,7 @@
 
 #include "laser_geometry.hpp"
 #include "mars/graph_bundle_management/graph_bundle_manager.hpp"
+#include "mars/graph_bundle_management/shared_sight_connector.hpp"
 #include "mars/perception_geometry/perception_pipeline.hpp"
 #include "navigator.hpp"
 #include "path_follower.hpp"
@@ -155,20 +156,24 @@ class OnlineJetTankNode {
                pose_.position.x, pose_.position.y, pose_.yaw);
     }
 
-    geometry_msgs::TransformStamped tf_msg;
-    tf_msg.header.stamp = ros::Time::now();
-    tf_msg.header.frame_id = "odom";
-    tf_msg.child_frame_id = "base_footprint";
-    tf_msg.transform.translation.x = x;
-    tf_msg.transform.translation.y = y;
-    tf_msg.transform.translation.z = 0.0;
-    tf2::Quaternion q;
-    q.setRPY(0, 0, yaw);
-    tf_msg.transform.rotation.x = q.x();
-    tf_msg.transform.rotation.y = q.y();
-    tf_msg.transform.rotation.z = q.z();
-    tf_msg.transform.rotation.w = q.w();
-    tf_broadcaster_.sendTransform(tf_msg);
+    const ros::Time now = ros::Time::now();
+    if (now > last_tf_stamp_ + ros::Duration(0.02)) {
+      last_tf_stamp_ = now;
+      geometry_msgs::TransformStamped tf_msg;
+      tf_msg.header.stamp = now;
+      tf_msg.header.frame_id = "odom";
+      tf_msg.child_frame_id = "base_footprint";
+      tf_msg.transform.translation.x = x;
+      tf_msg.transform.translation.y = y;
+      tf_msg.transform.translation.z = 0.0;
+      tf2::Quaternion q;
+      q.setRPY(0, 0, yaw);
+      tf_msg.transform.rotation.x = q.x();
+      tf_msg.transform.rotation.y = q.y();
+      tf_msg.transform.rotation.z = q.z();
+      tf_msg.transform.rotation.w = q.w();
+      tf_broadcaster_.sendTransform(tf_msg);
+    }
   }
 
   void on_model_states(const gazebo_msgs::ModelStates::ConstPtr& msg) {
@@ -270,15 +275,28 @@ class OnlineJetTankNode {
         }
       }
     } else if (scan_sequence_ > scan_used_) {
-      plan_from_current_scan();
+      try {
+        plan_from_current_scan();
+      } catch (const std::exception& e) {
+        ROS_WARN("Planner exception on frame: %s (retrying on next scan)", e.what());
+      }
       scan_used_ = scan_sequence_;
     }
   }
 
   void plan_from_current_scan() {
     const auto obstacles = scan_to_obstacles(scan_, pose_, config_.vision_radius);
-    const auto perception = mars::perception_geometry::perceive(
+    auto perception = mars::perception_geometry::perceive(
         pose_.position, config_.vision_radius, obstacles);
+
+    // Sanitize open points so none violate neighbor_sight_supports_point
+    perception.open_points.erase(
+        std::remove_if(perception.open_points.begin(), perception.open_points.end(),
+                       [&](const mars::perception_geometry::OpenPoint& op) {
+                         return !mars::graph_bundle_management::neighbor_sight_supports_point(
+                             perception.neighbor_sight, op.point, config_.linear_epsilon);
+                       }),
+        perception.open_points.end());
 
     mars::graph_bundle_management::GraphBundleUpdate update;
     update.observation_id = ++observation_id_;
@@ -470,7 +488,7 @@ class OnlineJetTankNode {
   LaserFrame scan_{};
   std::vector<Point2D> entry_path_, trail_, planned_, entry_trace_, return_trace_;
   std::string current_event_{"INIT"};
-  ros::Time progress_time_{}, scan_time_{};
+  ros::Time progress_time_{}, scan_time_{}, last_tf_stamp_{};
   std::uint64_t scan_sequence_{0}, scan_used_{0}, observation_id_{0};
   bool have_pose_{false}, active_{false}, terminal_{false};
   int safety_stops_{0};
