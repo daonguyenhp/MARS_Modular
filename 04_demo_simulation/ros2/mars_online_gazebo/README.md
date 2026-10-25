@@ -15,7 +15,7 @@ manager, and Module 3 navigator, then follows only the next selected path with
 `/cmd_vel`. After driving that path it scans and decides again. A low-level
 safety recovery is enabled: when the forward LiDAR sector is too close, the
 controller backs up, turns toward the more open side, waits for a fresh scan,
-and replans. BAR/DAP/Funnel remains the MARS decision logic. RViz shows a
+marks the failed next waypoint temporarily blocked, and replans. BAR/DAP/Funnel remains the MARS decision logic. RViz shows a
 LiDAR-built occupancy grid for inspection, not for planning.
 
 ## Ubuntu run

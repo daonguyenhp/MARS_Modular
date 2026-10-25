@@ -171,6 +171,7 @@ class OnlineNavigationNode : public rclcpp::Node {
     scan_used_ = 0;
     recovery_phase_ = RecoveryPhase::None;
     recovery_attempts_ = 0;
+    blocked_targets_.clear();
     current_event_ = "WAIT_SENSORS";
   }
 
@@ -185,6 +186,7 @@ class OnlineNavigationNode : public rclcpp::Node {
   enum class RecoveryPhase { None, Backoff, Turn };
 
   void begin_recovery() {
+    remember_blocked_target();
     ++recovery_attempts_;
     if (recovery_attempts_ > 5) {
       stop();
@@ -210,6 +212,34 @@ class OnlineNavigationNode : public rclcpp::Node {
                 "Obstacle at %.2f m; backing up and turning %s (left %.2f, right %.2f)",
                 mars::online_gazebo::forward_clearance(scan_),
                 turn_sign_ > 0.0 ? "left" : "right", left, right);
+  }
+
+  struct BlockedTarget {
+    Point2D point{};
+    std::uint64_t expires_scan{0};
+  };
+
+  void remember_blocked_target() {
+    if (planned_.size() < 2) return;
+    const Point2D target = planned_[1];
+    for (const auto& blocked : blocked_targets_) {
+      if (distance(blocked.point, target) < 0.30) return;
+    }
+    blocked_targets_.push_back({target, scan_sequence_ + 40});
+    RCLCPP_WARN(get_logger(),
+                "Marking waypoint (%.2f, %.2f) blocked until scan %zu",
+                target.x, target.y,
+                static_cast<std::size_t>(scan_sequence_ + 40));
+  }
+
+  bool is_blocked_target(Point2D point) const {
+    for (const auto& blocked : blocked_targets_) {
+      if (scan_sequence_ <= blocked.expires_scan &&
+          distance(blocked.point, point) < 0.45) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void run_recovery() {
@@ -404,6 +434,12 @@ class OnlineNavigationNode : public rclcpp::Node {
     observation.entry_pose = entry_pose_;
     observation.entry_path = entry_path_;
     observation.ranked = manager_->ranked_open_points();
+    observation.ranked.erase(
+        std::remove_if(observation.ranked.begin(), observation.ranked.end(),
+                       [this](const auto& candidate) {
+                         return is_blocked_target(candidate.point);
+                       }),
+        observation.ranked.end());
     if (navigator_->return_target())
       observation.at_return_target =
           distance(pose_.position, *navigator_->return_target()) <= config_.arrival_tolerance;
@@ -547,6 +583,7 @@ class OnlineNavigationNode : public rclcpp::Node {
   Pose2D progress_pose_{};
   LaserFrame scan_{};
   std::vector<Point2D> entry_path_, trail_, planned_, entry_trace_, return_trace_;
+  std::vector<BlockedTarget> blocked_targets_;
   std::string current_event_;
   std::string status_log_path_;
   std::ofstream status_log_;
