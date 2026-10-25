@@ -358,18 +358,26 @@ class OnlineJetTankNode {
       return distance(p, proj);
     };
 
-    auto ccw = [](Point2D a, Point2D b, Point2D c) {
-      return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x);
+    auto cross_2d = [](Point2D a, Point2D b, Point2D c) {
+      return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
     };
     auto segments_intersect = [&](Point2D p1, Point2D p2, Point2D p3, Point2D p4) {
-      return (ccw(p1, p3, p4) != ccw(p2, p3, p4)) && (ccw(p1, p2, p3) != ccw(p1, p2, p4));
+      const double d1 = cross_2d(p3, p4, p1);
+      const double d2 = cross_2d(p3, p4, p2);
+      const double d3 = cross_2d(p1, p2, p3);
+      const double d4 = cross_2d(p1, p2, p4);
+      if (((d1 > 1e-5 && d2 < -1e-5) || (d1 < -1e-5 && d2 > 1e-5)) &&
+          ((d3 > 1e-5 && d4 < -1e-5) || (d3 < -1e-5 && d4 > 1e-5))) {
+        return true;
+      }
+      return false;
     };
 
     // Sanitize open points:
     // 1. Must satisfy neighbor_sight_supports_point
-    // 2. Direct line-of-sight must NOT be occluded by raw laser scan returns
-    // 3. Line from robot to candidate point must NOT cross any obstacle wall!
-    // 4. Candidate open point must have safe clearance from all obstacle walls (>= 0.20m)
+    // 2. Direct line-of-sight must NOT be occluded by raw laser scan returns at 25%, 50%, 75%, 100% of hop
+    // 3. Line from robot to candidate point must NOT cross any perceived obstacle wall segment
+    // 4. Candidate open point and entire path must have safe clearance from all obstacle walls
     latest_perception_.open_points.erase(
         std::remove_if(latest_perception_.open_points.begin(), latest_perception_.open_points.end(),
                        [&](const mars::perception_geometry::OpenPoint& op) {
@@ -377,17 +385,28 @@ class OnlineJetTankNode {
                                  latest_perception_.neighbor_sight, op.point, config_.linear_epsilon)) {
                            return true;
                          }
-                         if (is_point_occluded_in_scan(scan_, pose_, op.point, 0.04)) {
-                           return true;
+                         for (double frac = 0.25; frac <= 1.0; frac += 0.25) {
+                           const Point2D sample{pose_.position.x + frac * (op.point.x - pose_.position.x),
+                                                pose_.position.y + frac * (op.point.y - pose_.position.y)};
+                           if (is_point_occluded_in_scan(scan_, pose_, sample, 0.04)) {
+                             return true;
+                           }
+                           for (const auto& poly : latest_obstacles_) {
+                             for (std::size_t vi = 0; vi + 1 < poly.vertices.size(); ++vi) {
+                               const Point2D w1 = poly.vertices[vi];
+                               const Point2D w2 = poly.vertices[vi + 1];
+                               if (segments_intersect(pose_.position, op.point, w1, w2)) {
+                                 return true;
+                               }
+                               if (point_to_segment_dist(sample, w1, w2) < 0.18) {
+                                 return true;
+                               }
+                             }
+                           }
                          }
                          for (const auto& poly : latest_obstacles_) {
-                           if (poly.vertices.size() >= 2) {
-                             const Point2D w1 = poly.vertices.front();
-                             const Point2D w2 = poly.vertices.back();
-                             if (segments_intersect(pose_.position, op.point, w1, w2)) {
-                               return true;
-                             }
-                             if (point_to_segment_dist(op.point, w1, w2) < 0.20) {
+                           for (std::size_t vi = 0; vi + 1 < poly.vertices.size(); ++vi) {
+                             if (point_to_segment_dist(op.point, poly.vertices[vi], poly.vertices[vi + 1]) < 0.22) {
                                return true;
                              }
                            }
@@ -568,11 +587,11 @@ class OnlineJetTankNode {
     // 1. Ray bundles: clean, bounded fan lines (36 rays, exactly 10 deg spacing) in laser_frame (NO skew!)
     Marker rays = make_marker("ray_bundles", 0, Marker::LINE_LIST, stamp);
     rays.header.frame_id = "laser_frame";
-    rays.scale.x = 0.015;
-    rays.color.r = 0.0;
-    rays.color.g = 0.95;
-    rays.color.b = 1.0;
-    rays.color.a = 0.55;
+    rays.scale.x = 0.012;
+    rays.color.r = 0.12;
+    rays.color.g = 0.47;
+    rays.color.b = 0.71;
+    rays.color.a = 0.50;
     if (!scan_.ranges.empty() && scan_.angle_increment > 0.0) {
       const std::size_t step = std::max<std::size_t>(1, scan_.ranges.size() / 36);
       for (std::size_t i = 0; i < scan_.ranges.size(); i += step) {
@@ -594,11 +613,11 @@ class OnlineJetTankNode {
     // 2. Vision boundary ring (R = 1.6m) centered on laser_frame
     Marker vision_ring = make_marker("vision_boundary", 10, Marker::LINE_STRIP, stamp);
     vision_ring.header.frame_id = "laser_frame";
-    vision_ring.scale.x = 0.018;
-    vision_ring.color.r = 0.0;
-    vision_ring.color.g = 0.85;
-    vision_ring.color.b = 1.0;
-    vision_ring.color.a = 0.40;
+    vision_ring.scale.x = 0.014;
+    vision_ring.color.r = 0.84;
+    vision_ring.color.g = 0.15;
+    vision_ring.color.b = 0.16;
+    vision_ring.color.a = 0.35;
     const int ring_segments = 64;
     for (int k = 0; k <= ring_segments; ++k) {
       const double theta = (2.0 * M_PI * k) / ring_segments;
@@ -610,15 +629,15 @@ class OnlineJetTankNode {
     }
     markers.markers.push_back(vision_ring);
 
-    // 3. Open Sights (vùng tia mở): translucent emerald green fan sectors
+    // 3. Open Sights (vùng tia mở): soft pastel sage fan sectors
     Marker open_fans = make_marker("open_sights", 1, Marker::TRIANGLE_LIST, stamp);
     open_fans.scale.x = 1.0;
     open_fans.scale.y = 1.0;
     open_fans.scale.z = 1.0;
-    open_fans.color.r = 0.15;
-    open_fans.color.g = 0.95;
-    open_fans.color.b = 0.25;
-    open_fans.color.a = 0.38;
+    open_fans.color.r = 0.50;
+    open_fans.color.g = 0.82;
+    open_fans.color.b = 0.55;
+    open_fans.color.a = 0.15;
     for (const auto& sight : latest_perception_.open_sights) {
       const double start = sight.interval.start;
       const double sweep = sight.interval.sweep;
@@ -632,22 +651,22 @@ class OnlineJetTankNode {
                          p0.y + config_.vision_radius * std::sin(a1)};
         const Point2D p2{p0.x + config_.vision_radius * std::cos(a2),
                          p0.y + config_.vision_radius * std::sin(a2)};
-        open_fans.points.push_back(to_ros_point(p0, 0.08));
-        open_fans.points.push_back(to_ros_point(p1, 0.08));
-        open_fans.points.push_back(to_ros_point(p2, 0.08));
+        open_fans.points.push_back(to_ros_point(p0, 0.04));
+        open_fans.points.push_back(to_ros_point(p1, 0.04));
+        open_fans.points.push_back(to_ros_point(p2, 0.04));
       }
     }
     markers.markers.push_back(open_fans);
 
-    // 4. Closed Sights (vùng tia đóng/chặn): translucent red fan sectors
+    // 4. Closed Sights (vùng tia đóng/chặn): soft pastel rose fan sectors
     Marker closed_fans = make_marker("closed_sights", 2, Marker::TRIANGLE_LIST, stamp);
     closed_fans.scale.x = 1.0;
     closed_fans.scale.y = 1.0;
     closed_fans.scale.z = 1.0;
     closed_fans.color.r = 0.95;
-    closed_fans.color.g = 0.20;
-    closed_fans.color.b = 0.30;
-    closed_fans.color.a = 0.28;
+    closed_fans.color.g = 0.65;
+    closed_fans.color.b = 0.70;
+    closed_fans.color.a = 0.12;
     for (const auto& sight : latest_perception_.closed_sights) {
       const double start = sight.interval.start;
       const double sweep = sight.interval.sweep;
@@ -661,112 +680,106 @@ class OnlineJetTankNode {
                          p0.y + config_.vision_radius * std::sin(a1)};
         const Point2D p2{p0.x + config_.vision_radius * std::cos(a2),
                          p0.y + config_.vision_radius * std::sin(a2)};
-        closed_fans.points.push_back(to_ros_point(p0, 0.07));
-        closed_fans.points.push_back(to_ros_point(p1, 0.07));
-        closed_fans.points.push_back(to_ros_point(p2, 0.07));
+        closed_fans.points.push_back(to_ros_point(p0, 0.03));
+        closed_fans.points.push_back(to_ros_point(p1, 0.03));
+        closed_fans.points.push_back(to_ros_point(p2, 0.03));
       }
     }
     markers.markers.push_back(closed_fans);
 
-    // 5. Perceived Obstacle Walls: thick neon amber lines
+    // 5. Perceived Obstacle Walls: clean dark slate lines
     Marker walls = make_marker("perceived_walls", 3, Marker::LINE_LIST, stamp);
-    walls.scale.x = 0.05;
-    walls.color.r = 1.0;
-    walls.color.g = 0.60;
-    walls.color.b = 0.0;
-    walls.color.a = 1.0;
+    walls.scale.x = 0.04;
+    walls.color.r = 0.30;
+    walls.color.g = 0.35;
+    walls.color.b = 0.40;
+    walls.color.a = 0.90;
     for (const auto& poly : latest_obstacles_) {
       if (poly.vertices.size() >= 2) {
-        walls.points.push_back(to_ros_point(poly.vertices.front(), 0.14));
-        walls.points.push_back(to_ros_point(poly.vertices.back(), 0.14));
+        walls.points.push_back(to_ros_point(poly.vertices.front(), 0.10));
+        walls.points.push_back(to_ros_point(poly.vertices.back(), 0.10));
       }
     }
     markers.markers.push_back(walls);
 
-    // 6. Open Points: bright gold spheres on sensing circle
+    // 6. Open Points: crisp gold dots on sensing circle
     Marker points = make_marker("open_points", 4, Marker::SPHERE_LIST, stamp);
-    points.scale.x = 0.16;
-    points.scale.y = 0.16;
-    points.scale.z = 0.16;
-    points.color.r = 1.0;
-    points.color.g = 0.88;
+    points.scale.x = 0.12;
+    points.scale.y = 0.12;
+    points.scale.z = 0.12;
+    points.color.r = 0.95;
+    points.color.g = 0.70;
     points.color.b = 0.0;
-    points.color.a = 1.0;
+    points.color.a = 0.95;
     for (const auto& op : latest_perception_.open_points) {
-      points.points.push_back(to_ros_point(op.point, 0.16));
+      points.points.push_back(to_ros_point(op.point, 0.12));
     }
     markers.markers.push_back(points);
 
-    // 7. Dedicated 3D Entry Path Ribbon (Đường đi vào - Màu Đỏ tươi)
+    // 7. Dedicated 3D Entry Path Ribbon (Đường đi vào - Màu Đỏ)
     Marker entry_marker = make_marker("entry_path_marker", 20, Marker::LINE_STRIP, stamp);
-    entry_marker.scale.x = 0.08;
-    entry_marker.color.r = 1.0;
-    entry_marker.color.g = 0.0;
-    entry_marker.color.b = 0.0;
+    entry_marker.scale.x = 0.06;
+    entry_marker.color.r = 0.84;
+    entry_marker.color.g = 0.15;
+    entry_marker.color.b = 0.16;
     entry_marker.color.a = 1.0;
     for (const auto& p : entry_trace_) {
-      entry_marker.points.push_back(to_ros_point(p, 0.06));
+      entry_marker.points.push_back(to_ros_point(p, 0.05));
     }
     markers.markers.push_back(entry_marker);
 
-    // 8. Dedicated 3D Return Path Ribbon (Đường đi ra - Màu Xanh lam tươi)
+    // 8. Dedicated 3D Return Path Ribbon (Đường đi ra - Màu Xanh lam)
     Marker return_marker = make_marker("return_path_marker", 21, Marker::LINE_STRIP, stamp);
-    return_marker.scale.x = 0.09;
-    return_marker.color.r = 0.0;
-    return_marker.color.g = 0.45;
-    return_marker.color.b = 1.0;
+    return_marker.scale.x = 0.07;
+    return_marker.color.r = 0.12;
+    return_marker.color.g = 0.47;
+    return_marker.color.b = 0.85;
     return_marker.color.a = 1.0;
     for (const auto& p : return_trace_) {
-      return_marker.points.push_back(to_ros_point(p, 0.08));
+      return_marker.points.push_back(to_ros_point(p, 0.07));
     }
     markers.markers.push_back(return_marker);
 
     // 9. Observation Centers & 3D Text Labels
     for (std::size_t i = 0; i < entry_path_.size(); ++i) {
-      Marker center_pt = make_marker("observation_centers", static_cast<int>(50 + i), Marker::SPHERE, stamp);
+      Marker center_pt = make_marker("observation_centers", static_cast<int>(50 + i), Marker::CYLINDER, stamp);
+      center_pt.scale.x = 0.18;
+      center_pt.scale.y = 0.18;
+      center_pt.scale.z = 0.03;
       if (i == 0) {
         // C0 (Start)
-        center_pt.scale.x = 0.24;
-        center_pt.scale.y = 0.24;
-        center_pt.scale.z = 0.24;
-        center_pt.color.r = 0.1;
-        center_pt.color.g = 1.0;
-        center_pt.color.b = 0.3;
-        center_pt.color.a = 1.0;
+        center_pt.color.r = 0.15;
+        center_pt.color.g = 0.75;
+        center_pt.color.b = 0.30;
+        center_pt.color.a = 0.95;
       } else if (i + 1 == entry_path_.size() && (current_event_ == "BAR" || current_event_ == "FUNNEL" || current_event_ == "RETURN_REACHED")) {
         // C4 (BAR / Blind Alley Root - Đáy hẻm)
-        center_pt.scale.x = 0.28;
-        center_pt.scale.y = 0.28;
-        center_pt.scale.z = 0.28;
-        center_pt.color.r = 1.0;
-        center_pt.color.g = 0.1;
-        center_pt.color.b = 0.2;
-        center_pt.color.a = 1.0;
+        center_pt.color.r = 0.84;
+        center_pt.color.g = 0.15;
+        center_pt.color.b = 0.16;
+        center_pt.color.a = 0.95;
       } else {
         // Intermediate exploration centers
-        center_pt.scale.x = 0.20;
-        center_pt.scale.y = 0.20;
-        center_pt.scale.z = 0.20;
-        center_pt.color.r = 1.0;
-        center_pt.color.g = 0.70;
-        center_pt.color.b = 0.1;
-        center_pt.color.a = 0.95;
+        center_pt.color.r = 0.90;
+        center_pt.color.g = 0.92;
+        center_pt.color.b = 0.95;
+        center_pt.color.a = 0.90;
       }
-      center_pt.pose.position = to_ros_point(entry_path_[i], 0.14);
+      center_pt.pose.position = to_ros_point(entry_path_[i], 0.10);
       markers.markers.push_back(center_pt);
 
       // Observation Center 3D Text Labels
       Marker label = make_marker("center_labels", static_cast<int>(100 + i), Marker::TEXT_VIEW_FACING, stamp);
-      label.scale.z = 0.28;
-      label.color.r = 1.0;
-      label.color.g = 1.0;
-      label.color.b = 1.0;
+      label.scale.z = 0.22;
+      label.color.r = 0.95;
+      label.color.g = 0.95;
+      label.color.b = 0.95;
       label.color.a = 1.0;
-      label.pose.position = to_ros_point(entry_path_[i], 0.42);
+      label.pose.position = to_ros_point(entry_path_[i], 0.35);
       if (i == 0) {
         label.text = "C0 (Start)";
       } else if (i + 1 == entry_path_.size() && (current_event_ == "BAR" || current_event_ == "FUNNEL" || current_event_ == "RETURN_REACHED")) {
-        label.text = "C" + std::to_string(i) + " (BAR - Day hem)";
+        label.text = "C" + std::to_string(i) + " (BAR)";
       } else {
         label.text = "C" + std::to_string(i);
       }

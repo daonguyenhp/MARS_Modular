@@ -78,7 +78,7 @@ std::vector<Polygon2D> scan_to_obstacles(const LaserFrame& scan,
   }
   flush();
 
-  // Corner welding: snap adjacent/corner segment endpoints within 0.12m
+  // Corner welding: snap adjacent/corner segment endpoints within 0.25m
   // to prevent artificial optical slits between perpendicular walls.
   for (std::size_t i = 0; i < result.size(); ++i) {
     if (result[i].vertices.size() < 2) continue;
@@ -88,7 +88,7 @@ std::vector<Polygon2D> scan_to_obstacles(const LaserFrame& scan,
         for (int b = 0; b <= 1; ++b) {
           Point2D& p_a = (a == 0) ? result[i].vertices.front() : result[i].vertices.back();
           Point2D& p_b = (b == 0) ? result[j].vertices.front() : result[j].vertices.back();
-          if (distance(p_a, p_b) <= 0.12) {
+          if (distance(p_a, p_b) <= 0.25) {
             Point2D mid{(p_a.x + p_b.x) * 0.5, (p_a.y + p_b.y) * 0.5};
             p_a = mid;
             p_b = mid;
@@ -145,7 +145,7 @@ bool is_point_occluded_in_scan(const LaserFrame& scan,
       }
     }
   }
-  return (valid_rays > 0 && blocked_rays >= 2);
+  return (valid_rays > 0 && blocked_rays >= 1);
 }
 
 double forward_clearance(const LaserFrame& scan) {

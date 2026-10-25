@@ -64,6 +64,8 @@
 
   <!-- 6. RViz Display -->
   <group if="$(arg rviz)">
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find mars_online_jettank)/rviz/jettank_paper_alley.rviz" />
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find mars_online_jettank)/rviz/jettank_paper_alley.rviz">
+      <env name="DISABLE_ROS1_EOL_WARNINGS" value="1" />
+    </node>
   </group>
 </launch>

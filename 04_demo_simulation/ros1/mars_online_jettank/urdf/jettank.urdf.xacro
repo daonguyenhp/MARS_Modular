@@ -31,13 +31,38 @@
   <link name="base_link">
     <inertial>
       <mass value="2.5"/>
-      <origin xyz="0 0 0.04" rpy="0 0 0"/>
-      <inertia ixx="0.015" ixy="0" ixz="0" iyy="0.020" iyz="0" izz="0.025"/>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <inertia ixx="0.02" ixy="0" ixz="0" iyy="0.03" iyz="0" izz="0.03"/>
     </inertial>
     <collision>
       <origin xyz="0 0 0.04" rpy="0 0 0"/>
       <geometry>
         <box size="0.22 0.16 0.08"/>
+      </geometry>
+    </collision>
+    <!-- 4 Non-rotating anti-pitch/anti-tip track skids in base_link (front/rear of each track) -->
+    <collision name="left_track_front_skid">
+      <origin xyz="0.08 0.11 -0.001" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.044"/>
+      </geometry>
+    </collision>
+    <collision name="left_track_rear_skid">
+      <origin xyz="-0.08 0.11 -0.001" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.044"/>
+      </geometry>
+    </collision>
+    <collision name="right_track_front_skid">
+      <origin xyz="0.08 -0.11 -0.001" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.044"/>
+      </geometry>
+    </collision>
+    <collision name="right_track_rear_skid">
+      <origin xyz="-0.08 -0.11 -0.001" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.044"/>
       </geometry>
     </collision>
     <!-- Visual 1: Main emerald green chassis hull -->
@@ -169,6 +194,7 @@
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.003" iyz="0" izz="0.003"/>
     </inertial>
+    <!-- Continuous concentric driving cylinder (ground contact with high track traction) -->
     <collision>
       <origin xyz="0 0 0" rpy="1.5707963 0 0"/>
       <geometry>
@@ -324,6 +350,7 @@
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.003" iyz="0" izz="0.003"/>
     </inertial>
+    <!-- Continuous concentric driving cylinder (ground contact with high track traction) -->
     <collision>
       <origin xyz="0 0 0" rpy="1.5707963 0 0"/>
       <geometry>
@@ -479,12 +506,6 @@
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
     </inertial>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.036" length="0.035"/>
-      </geometry>
-    </collision>
     <!-- RPLiDAR black rotating cylindrical turret -->
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -511,6 +532,8 @@
 
   <!-- Gazebo Material Colors -->
   <gazebo reference="base_link">
+    <mu1>0.05</mu1>
+    <mu2>0.05</mu2>
     <material>Gazebo/Green</material>
   </gazebo>
   <gazebo reference="left_wheel">
