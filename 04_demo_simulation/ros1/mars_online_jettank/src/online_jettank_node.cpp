@@ -296,6 +296,9 @@ class OnlineJetTankNode {
           entry_trace_.push_back(pose_.position);
         } else if (current_event_ == "FUNNEL") {
           return_trace_.push_back(pose_.position);
+          if (return_index_ > 0) {
+            --return_index_;
+          }
         }
       } else {
         if (distance(pose_.position, progress_pose_.position) > 0.03 ||
@@ -389,6 +392,7 @@ class OnlineJetTankNode {
     observation.ranked = manager_->ranked_open_points();
     if (navigator_->return_target()) {
       observation.at_return_target =
+          (return_index_ == 0) ||
           distance(pose_.position, *navigator_->return_target()) <= config_.arrival_tolerance;
     }
 
@@ -445,27 +449,27 @@ class OnlineJetTankNode {
     if (decision.event == "BAR") {
       ROS_INFO("Observation %zu: Blind Alley Detected! Transitioning to DAP Funnel...",
                static_cast<std::size_t>(observation_id_));
+      if (return_index_ < 0) {
+        return_index_ = static_cast<int>(entry_path_.size()) - 1;
+      }
       decision = navigator_->decide(observation); // transition to FUNNEL immediately
     }
     current_event_ = decision.event;
     planned_ = decision.planned_path.points;
 
-    // In FUNNEL mode, ensure reliable escape route:
+    // In FUNNEL mode, backtrack step-by-step safely along the sequence of observation centers:
     if (current_event_ == "FUNNEL" || current_event_ == "FUNNEL_FAIL") {
-      if (planned_.size() < 2 || current_event_ == "FUNNEL_FAIL") {
-        ROS_INFO("Observation %zu: Using reverse entry path for DAP funnel escape",
-                 static_cast<std::size_t>(observation_id_));
-        planned_.clear();
-        for (auto it = entry_path_.rbegin(); it != entry_path_.rend(); ++it) {
-          if (planned_.empty() || distance(planned_.back(), *it) > 0.20) {
-            planned_.push_back(*it);
-          }
-        }
-        current_event_ = "FUNNEL";
+      if (return_index_ < 0 && !entry_path_.empty()) {
+        return_index_ = static_cast<int>(entry_path_.size()) - 1;
       }
-      // Step-by-step retreat: take one hop per observation
-      if (planned_.size() > 2) {
-        planned_.resize(2);
+      if (return_index_ > 0 && return_index_ - 1 < static_cast<int>(entry_path_.size())) {
+        const Point2D target_center = entry_path_[return_index_ - 1];
+        planned_ = {pose_.position, target_center};
+        current_event_ = "FUNNEL";
+        ROS_INFO("Observation %zu: DAP funnel step to C%d (%.2f, %.2f), distance: %.2fm",
+                 static_cast<std::size_t>(observation_id_),
+                 return_index_ - 1, target_center.x, target_center.y,
+                 distance(pose_.position, target_center));
       }
     }
 
@@ -717,7 +721,7 @@ class OnlineJetTankNode {
   std::uint64_t scan_sequence_{0}, scan_used_{0}, observation_id_{0};
   std::size_t planned_index_{0};
   bool have_pose_{false}, active_{false}, terminal_{false}, is_pivoting_{false};
-  int safety_stops_{0};
+  int safety_stops_{0}, return_index_{-1};
 
   ros::Subscriber scan_sub_, scan_sub_fallback_, odom_sub_, model_states_sub_, goal_sub_;
   ros::Publisher cmd_pub_, jettank_cmd_pub_, status_pub_, marker_pub_;
