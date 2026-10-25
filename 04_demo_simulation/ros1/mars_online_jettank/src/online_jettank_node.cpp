@@ -680,25 +680,25 @@ class OnlineJetTankNode {
     }
     markers.markers.push_back(points);
 
-    // 7. Dedicated 3D Entry Path Ribbon (Đường đi vào - Red/Orange)
+    // 7. Dedicated 3D Entry Path Ribbon (Đường đi vào - Màu Đỏ tươi)
     Marker entry_marker = make_marker("entry_path_marker", 20, Marker::LINE_STRIP, stamp);
-    entry_marker.scale.x = 0.07;
+    entry_marker.scale.x = 0.08;
     entry_marker.color.r = 1.0;
-    entry_marker.color.g = 0.25;
-    entry_marker.color.b = 0.08;
-    entry_marker.color.a = 0.95;
+    entry_marker.color.g = 0.0;
+    entry_marker.color.b = 0.0;
+    entry_marker.color.a = 1.0;
     for (const auto& p : entry_trace_) {
       entry_marker.points.push_back(to_ros_point(p, 0.06));
     }
     markers.markers.push_back(entry_marker);
 
-    // 8. Dedicated 3D Return Path Ribbon (Đường đi ra - Neon Electric Cyan)
+    // 8. Dedicated 3D Return Path Ribbon (Đường đi ra - Màu Xanh lam tươi)
     Marker return_marker = make_marker("return_path_marker", 21, Marker::LINE_STRIP, stamp);
-    return_marker.scale.x = 0.08;
+    return_marker.scale.x = 0.09;
     return_marker.color.r = 0.0;
-    return_marker.color.g = 0.92;
+    return_marker.color.g = 0.45;
     return_marker.color.b = 1.0;
-    return_marker.color.a = 0.95;
+    return_marker.color.a = 1.0;
     for (const auto& p : return_trace_) {
       return_marker.points.push_back(to_ros_point(p, 0.08));
     }
